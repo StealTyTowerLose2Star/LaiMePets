@@ -1,0 +1,29 @@
+[package]
+name = "lai-me-pet"
+version = "0.1.0"
+description = "LaiMePet — 把真实宠物带进你的桌面"
+authors = ["LaiMePet Team"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "lai_me_pet_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

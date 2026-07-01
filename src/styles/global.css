@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/* ── Design Tokens (映射自 design-system.md) ── */
+
+@theme {
+  /* === 品牌色 — Warm Amber === */
+  --color-brand-50: #fff8f0;
+  --color-brand-100: #ffedd5;
+  --color-brand-200: #ffd9a8;
+  --color-brand-300: #ffc17a;
+  --color-brand-400: #faa95a;
+  --color-brand-500: #f59e5b;
+  --color-brand-600: #e0873e;
+  --color-brand-700: #c06b2a;
+  --color-brand-800: #9a501c;
+  --color-brand-900: #6e3612;
+
+  /* === 中性色 — Light === */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #171717;
+
+  /* === 语义色 === */
+  --color-success: #22c55e;
+  --color-success-light: #86efac;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fcd34d;
+  --color-error: #ef4444;
+  --color-error-light: #fca5a5;
+  --color-info: #3b82f6;
+  --color-info-light: #93c5fd;
+
+  /* === 宠物心情色 === */
+  --color-mood-happy: #f59e5b;
+  --color-mood-happy-glow: #fbbf24;
+  --color-mood-bored: #94a3b8;
+  --color-mood-bored-glow: #cbd5e1;
+  --color-mood-sad: #64748b;
+  --color-mood-sad-glow: #94a3b8;
+  --color-mood-hungry: #ef4444;
+  --color-mood-hungry-glow: #f87171;
+
+  /* === 字体 === */
+  --font-sans: 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+
+  /* === 字号 (9 级) === */
+  --text-caption: 0.6875rem;     /* 11px */
+  --text-caption-line-height: 1rem;
+  --text-body-sm: 0.75rem;       /* 12px */
+  --text-body-sm-line-height: 1rem;
+  --text-body: 0.875rem;         /* 14px */
+  --text-body-line-height: 1.25rem;
+  --text-body-lg: 1rem;          /* 16px */
+  --text-body-lg-line-height: 1.5rem;
+  --text-subtitle: 1.125rem;     /* 18px */
+  --text-subtitle-line-height: 1.75rem;
+  --text-title-sm: 1.25rem;      /* 20px */
+  --text-title-sm-line-height: 1.75rem;
+  --text-title: 1.5rem;          /* 24px */
+  --text-title-line-height: 2rem;
+  --text-title-lg: 1.75rem;      /* 28px */
+  --text-title-lg-line-height: 2.25rem;
+  --text-display: 2rem;          /* 32px */
+  --text-display-line-height: 2.5rem;
+
+  /* === 字重 === */
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* === 间距 (4px 栅格) === */
+  --spacing-xs: 0.25rem;   /* 4px */
+  --spacing-sm: 0.5rem;    /* 8px */
+  --spacing-md: 1rem;      /* 16px */
+  --spacing-lg: 1.5rem;    /* 24px */
+  --spacing-xl: 2rem;      /* 32px */
+  --spacing-2xl: 3rem;     /* 48px */
+  --spacing-3xl: 4rem;     /* 64px */
+
+  /* === 圆角 === */
+  --radius-none: 0;
+  --radius-sm: 0.25rem;    /* 4px */
+  --radius-md: 0.5rem;     /* 8px */
+  --radius-lg: 0.75rem;    /* 12px */
+  --radius-full: 9999px;
+
+  /* === 阴影 === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+  --shadow-glow: 0 0 16px rgba(245, 158, 91, 0.4);
+
+  /* === 动效时长 === */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+  --duration-spring: 800ms;
+
+  /* === 缓动曲线 === */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+/* ── 全局基础样式 ── */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: transparent;
+    color: var(--color-neutral-900);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Windows Mica/Acrylic 兼容 */
+  .mica {
+    background: rgba(243, 243, 243, 0.85);
+    backdrop-filter: blur(30px) saturate(1.2);
+  }
+
+  .acrylic {
+    background: rgba(243, 243, 243, 0.65);
+    backdrop-filter: blur(40px) saturate(1.5);
+  }
+
+  /* 暗色模式 */
+  @media (prefers-color-scheme: dark) {
+    body {
+      color: var(--color-neutral-100);
+    }
+
+    .mica {
+      background: rgba(32, 32, 32, 0.85);
+      backdrop-filter: blur(30px) saturate(1.2);
+    }
+
+    .acrylic {
+      background: rgba(32, 32, 32, 0.65);
+      backdrop-filter: blur(40px) saturate(1.5);
+    }
+  }
+
+  /* 减少动效 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
