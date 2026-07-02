@@ -1,8 +1,8 @@
 """端到端测试：照片上传 → AI 生成 → 模型下载（mock 模式）"""
 from __future__ import annotations
 
+import asyncio
 import io
-import time
 
 import numpy as np
 from PIL import Image
@@ -15,11 +15,14 @@ client = TestClient(app)
 
 def create_test_photo(filename: str, size: tuple[int, int] = (512, 512),
                       color: tuple[int, int, int] = (200, 150, 100)) -> tuple[str, bytes, io.BytesIO]:
-    """生成一张模拟宠物照片（纯色 + 随机纹理）"""
-    arr = np.random.randint(0, 30, (size[1], size[0], 3), dtype=np.uint8)
+    """生成一张模拟宠物照片（带真实感的纹理，通过清晰度检测）"""
+    rng = np.random.default_rng()
+    # 使用大范围随机噪声 + 高斯模糊模拟真实照片纹理
+    # 这样拉普拉斯方差足够大，能通过清晰度检测
+    arr = rng.integers(0, 200, (size[1], size[0], 3), dtype=np.uint8)
     bg = np.full((size[1], size[0], 3), color, dtype=np.uint8)
-    # 混合纯色底 + 纹理，模拟真实照片
-    img_arr = np.clip(bg.astype(int) + arr.astype(int) - 15, 0, 255).astype(np.uint8)
+    # 混合纯色底 + 强纹理
+    img_arr = np.clip(bg.astype(int) + arr.astype(int) - 100, 0, 255).astype(np.uint8)
     img = Image.fromarray(img_arr, "RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
@@ -68,7 +71,12 @@ def test_e2e_mock_generation():
     max_wait = 30  # mock 模式很快，最多等 30s
     status = "pending"
     for i in range(max_wait * 2):  # 每 0.5s 轮询一次
-        time.sleep(0.5)
+        # 用 asyncio.sleep 而非 time.sleep，避免阻塞后台任务的事件循环
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(asyncio.sleep(0.5))
+        except RuntimeError:
+            asyncio.run(asyncio.sleep(0.5))
         r = client.get(f"/api/v1/status/{task_id}")
         if r.status_code != 200:
             print(f"  查询失败: {r.text}")

@@ -38,6 +38,10 @@ __pycache__/
 venv/
 *.egg-info/
 
+# AI service — generated outputs (test artifacts)
+services/outputs/
+services/uploads/
+
 # Misc
 *.swp
 *.swo

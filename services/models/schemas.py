@@ -89,6 +89,7 @@ class TaskStatusResponse(BaseModel):
     estimated_seconds: int = 0
     created_at: datetime
     updated_at: datetime
+    result: Optional[dict] = Field(default=None, description="完成时包含 pet_id 等结果")
 
 
 class PetModelInfo(BaseModel):

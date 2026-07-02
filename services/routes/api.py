@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from config import settings
@@ -50,6 +50,7 @@ async def health_check():
 
 @router.post("/generate", response_model=TaskResponse)
 async def generate_pet(
+    background_tasks: BackgroundTasks,
     realism: int = Form(default=50, ge=0, le=100),
     pet_name: str = Form(default="", max_length=20),
     photos: list[UploadFile] = File(...),
@@ -103,10 +104,9 @@ async def generate_pet(
         await save_preprocessed(task_id, filename, pp_data)
         preprocessed.append(pp_data)
 
-    # 5. 启动异步推理（后台执行，立即返回 task_id）
-    import asyncio
-    asyncio.create_task(
-        run_inference_async(task_id, preprocessed, realism)
+    # 5. 启动异步推理（使用 BackgroundTasks，兼容 TestClient 和 uvicorn）
+    background_tasks.add_task(
+        run_inference_async, task_id, preprocessed, realism
     )
 
     return TaskResponse(
@@ -133,6 +133,7 @@ async def get_generation_status(task_id: str):
         estimated_seconds=task.get("estimated_seconds", 0),
         created_at=task["created_at"],
         updated_at=task["updated_at"],
+        result=task.get("result"),
     )
 
 
