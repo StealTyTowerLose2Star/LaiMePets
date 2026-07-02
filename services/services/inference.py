@@ -78,6 +78,8 @@ def _load_model():
         _model = _load_triposr()
     elif model_type == "instantmesh":
         _model = _load_instantmesh()
+    elif model_type == "replicate":
+        _model = _load_replicate_pipeline()
     else:
         _model = _create_mock_pipeline()
 
@@ -148,6 +150,52 @@ def _create_mock_pipeline():
     """开发模式：返回 mock pipeline"""
     print("[Mock] 使用开发模式管线（无真实 AI）")
     return {"pipeline": None, "device": "cpu", "type": "mock"}
+
+
+def _load_replicate_pipeline():
+    """
+    加载 Replicate API 客户端（云端推理）。
+
+    无需 GPU，通过 Replicate 托管的模型进行推理。
+    需要设置环境变量 REPLICATE_API_TOKEN 或在 config 中配置。
+    """
+    import os
+
+    api_token = settings.replicate_api_token or os.environ.get("REPLICATE_API_TOKEN", "")
+
+    if not api_token:
+        raise RuntimeError(
+            "Replicate API token 未设置。请：\n"
+            "1. 访问 https://replicate.com/account/api-tokens 获取 token\n"
+            "2. 设置环境变量: set REPLICATE_API_TOKEN=r8_xxx\n"
+            "3. 或在 services/.env 文件中添加: REPLICATE_API_TOKEN=r8_xxx"
+        )
+
+    os.environ["REPLICATE_API_TOKEN"] = api_token
+
+    model_id = settings.replicate_model
+    if settings.replicate_model_version:
+        model_id = f"{model_id}:{settings.replicate_model_version}"
+
+    print(f"[Replicate] 使用云端模型: {model_id}")
+
+    return {
+        "pipeline": None,
+        "device": "cloud",
+        "type": "replicate",
+        "model_id": model_id,
+    }
+
+
+async def _download_replicate_output(file_url: str, label: str = "file") -> bytes:
+    """从 Replicate 返回的 URL 下载输出文件"""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.get(file_url)
+        resp.raise_for_status()
+        print(f"[Replicate] 下载 {label}: {len(resp.content):,} bytes")
+        return resp.content
 
 
 # ── 辅助 ──
@@ -314,6 +362,9 @@ def _run_inference(photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
     elif model["type"] == "instantmesh":
         return _run_instantmesh(model, photos, realism)
 
+    elif model["type"] == "replicate":
+        return _run_replicate(model, photos, realism)
+
     else:
         raise ValueError(f"未知模型类型: {model['type']}")
 
@@ -390,6 +441,103 @@ def _run_instantmesh(model: dict, photos: list[bytes], realism: int) -> tuple[by
     thumb_data = thumb_buf.getvalue()
 
     return glb_data, thumb_data
+
+
+def _run_replicate(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
+    """
+    Replicate API 推理 — 云端图像→3D 模型。
+
+    使用 Replicate 托管的 Hunyuan3D-2.1 / TRELLIS 等模型，
+    无需本地 GPU，通过 REST API 调用。
+
+    流程：
+    1. 将第一张照片编码为 data URI
+    2. 调用 replicate.run() 提交推理任务
+    3. 等待任务完成（replicate SDK 自动轮询）
+    4. 从返回的 URL 下载 GLB 模型
+    5. 生成缩略图
+    """
+    import replicate as replicate_sdk
+
+    model_id = model["model_id"]
+    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+
+    # 将图片保存为临时文件（Replicate SDK 需要文件路径或 URL）
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        img.save(tmp, format="PNG")
+        tmp_path = tmp.name
+
+    try:
+        print(f"[Replicate] 提交推理任务到 {model_id}...")
+
+        # Replicate SDK run() 会自动轮询直到完成
+        output = replicate_sdk.run(
+            model_id,
+            input={
+                "image": open(tmp_path, "rb"),
+            },
+        )
+
+        print(f"[Replicate] 推理完成，输出: {output}")
+
+        # 解析输出 — 通常是 FileOutput 或 URL 字符串
+        glb_url = None
+        if isinstance(output, list):
+            # 多个输出文件，找 .glb
+            for item in output:
+                if hasattr(item, 'url'):
+                    url_str = str(item.url)
+                    if '.glb' in url_str or 'model' in url_str:
+                        glb_url = url_str
+                        break
+                elif isinstance(item, str) and ('.glb' in item or item.startswith('http')):
+                    glb_url = item
+                    break
+            # 如果没找到 glb，取第一个 URL
+            if glb_url is None and output:
+                first = output[0]
+                glb_url = str(first.url) if hasattr(first, 'url') else str(first)
+        elif hasattr(output, 'url'):
+            glb_url = str(output.url)
+        elif isinstance(output, str):
+            glb_url = output
+        else:
+            raise ValueError(f"无法解析 Replicate 输出: {type(output)} — {output}")
+
+        if not glb_url:
+            raise ValueError(f"Replicate 未返回 3D 模型 URL，输出: {output}")
+
+        print(f"[Replicate] GLB URL: {glb_url[:80]}...")
+
+        # 下载 GLB
+        import urllib.request
+        with urllib.request.urlopen(glb_url) as resp:
+            glb_data = resp.read()
+
+        print(f"[Replicate] GLB 下载完成: {len(glb_data):,} bytes")
+
+        # 验证 GLB magic number
+        magic = int.from_bytes(glb_data[:4], "little")
+        if magic != 0x46546C67:
+            print(f"[Replicate] 警告: GLB magic 不匹配 ({magic:#x})，尝试直接使用")
+
+        # 缩略图：使用输入照片的缩略版本
+        thumb = img.resize((256, 256), Image.LANCZOS)
+        thumb_buf = io.BytesIO()
+        thumb.save(thumb_buf, format="PNG")
+        thumb_data = thumb_buf.getvalue()
+
+        return glb_data, thumb_data
+
+    finally:
+        # 清理临时文件
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def get_gpu_info() -> dict:

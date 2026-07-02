@@ -28,5 +28,8 @@ pydantic>=2.10.0
 pydantic-settings>=2.8.0
 python-dotenv>=1.1.0
 
+# 云端 API
+replicate>=1.0.0
+
 # 工具
 httpx>=0.28.0

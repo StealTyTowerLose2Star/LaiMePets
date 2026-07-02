@@ -21,14 +21,30 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 100
 
     # ── AI 推理 ──
-    # 模型类型: "triposr" | "instantmesh" | "mock"
-    ai_model: str = "mock"  # 开发模式，部署 GPU 服务器后改为 "triposr"
-    # 设备: "cuda" | "cpu"
+    # 模型类型: "replicate" | "triposr" | "instantmesh" | "mock"
+    # "replicate" — 云端 API（默认，无需 GPU，推荐办公本用户）
+    # "triposr" — 本地 GPU 推理（需 NVIDIA GPU 6GB+ 显存）
+    # "instantmesh" — 本地 GPU 推理（备用方案）
+    # "mock" — 开发模式，生成占位模型（无需 GPU，仅用于 UI 调试）
+    ai_model: str = "replicate"
+    # 设备: "cuda" | "cpu"（仅对 triposr/instantmesh 本地模式有效）
     ai_device: str = "cpu"
     # 是否允许 CPU 推理（很慢但可降级）
     allow_cpu_fallback: bool = True
     # 生成超时（秒）
     generation_timeout: int = 600
+
+    # ── Replicate API ──
+    # 从 https://replicate.com/account/api-tokens 获取
+    replicate_api_token: str = ""
+    # Replicate 上的模型标识符
+    # 候选:
+    #   "tencent/hunyuan3d-2"           — 基础版，无纹理
+    #   "ndreca/hunyuan3d-2.1"          — PBR 纹理版（推荐）
+    #   "zylim0702/yun-3d-2.1"          — 多格式输出
+    #   "firtoz/trellis"                — 微软 TRELLIS，最高质量
+    replicate_model: str = "ndreca/hunyuan3d-2.1"
+    replicate_model_version: str = ""  # 空 = 使用最新版本
 
     # ── 任务队列 ──
     redis_url: str = "redis://localhost:6379/0"
