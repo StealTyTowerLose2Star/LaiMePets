@@ -31,5 +31,11 @@ python-dotenv>=1.1.0
 # 云端 API
 replicate>=1.0.0
 
+# 背景移除
+rembg>=2.0.76
+
 # 工具
 httpx>=0.28.0
+
+# 打包
+pyinstaller>=6.11.0

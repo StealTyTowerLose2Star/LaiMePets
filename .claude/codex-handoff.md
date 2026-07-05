@@ -112,3 +112,74 @@
 **Follow-ups / Risks**
 - 普通沙箱 git status 仍可能显示该警告；需要完全消除只能在提升权限下运行 git 或调整 Codex 沙箱范围
 - services/.pytest_cache 仍有目录访问警告，建议后续删除该 pytest 缓存目录或修复其 ACL
+
+## 2026-07-05 19:09:30 +08:00
+
+**Summary**
+PyInstaller sidecar 打包完成
+
+**Changed Files**
+- No source changes
+
+**Verification**
+- Not run
+
+**Follow-ups / Risks**
+- None
+
+## 2026-07-05 19:09:59 +08:00
+
+**Summary**
+PyInstaller sidecar 打包配置已完成；exe 构建因当前环境缺少 PyInstaller 且 pip 网络安装被 WinError 10013 拒绝而未生成
+
+**Changed Files**
+- services/laimepet-ai-sidecar.spec
+- services/config.py
+- services/requirements.txt
+- src-tauri/tauri.conf.json
+- src-tauri/src/lib.rs
+- .claude/codex-handoff.md
+
+**Verification**
+- python -c "import main; print(main.app.title)" 成功
+- 临时端口 8123 /api/v1/health 返回 200
+- python -m PyInstaller laimepet-ai-sidecar.spec --clean --noconfirm 失败：No module named PyInstaller
+- cargo check 失败：externalBin 目标 exe 尚未生成
+- 临时占位 externalBin 后 cargo check 继续失败：GNU windres program not found
+
+**Follow-ups / Risks**
+- 安装 PyInstaller 后重新运行 services/laimepet-ai-sidecar.spec 构建 src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe
+- 生成 exe 后重新运行 exe health check 和 cargo check
+
+## 2026-07-05 19:10:59 +08:00
+
+**Summary**
+PyInstaller sidecar 打包配置完成，构建因 PyInstaller 无法安装而阻塞
+
+**Changed Files**
+- services/main.spec,src-tauri/tauri.conf.json
+
+**Verification**
+- services\.venv\Scripts\python.exe -m pip install pyinstaller 失败：pip no-index/127.0.0.1:9 代理导致找不到 pyinstaller,services\.venv\Scripts\python.exe -m PyInstaller services\main.spec --clean --noconfirm 失败：No module named PyInstaller,node JSON.parse 校验 tauri.conf.json 成功,sidecar exe 未生成
+
+**Follow-ups / Risks**
+- 需要解除 pip no-index/127.0.0.1:9 代理或提供 PyInstaller 离线 wheel 后重新构建,NSIS 打包时需包含 src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe
+
+## 2026-07-05 19:12:21 +08:00
+
+**Summary**
+PyInstaller sidecar 打包配置完成，构建因 PyInstaller 无法安装而阻塞
+
+**Changed Files**
+- services/main.spec
+- src-tauri/tauri.conf.json
+
+**Verification**
+- pip install pyinstaller 失败：当前 pip 环境 no-index，isolated 安装被代理到 127.0.0.1:9 后无法连接
+- main.spec 语法检查成功
+- tauri.conf.json JSON 校验成功，externalBin 仅保留 1 处
+- PyInstaller 构建失败：No module named PyInstaller，sidecar exe 未生成
+
+**Follow-ups / Risks**
+- 解除 pip no-index/127.0.0.1:9 代理或提供 PyInstaller 离线 wheel 后重新构建
+- NSIS 打包时需包含 src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe

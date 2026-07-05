@@ -8,6 +8,7 @@
 // - 系统级快捷键注册
 // - Python Sidecar 进程管理（AI 推理服务）
 
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::net::TcpStream;
@@ -81,7 +82,7 @@ fn find_python() -> Option<String> {
 }
 
 /// 查找 services/main.py（支持多种运行环境）
-fn find_sidecar_entry() -> Option<std::path::PathBuf> {
+fn find_sidecar_entry() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
 
     // 候选路径：CWD = 项目根，或 CWD = src-tauri/ 的子目录
@@ -105,11 +106,66 @@ fn find_sidecar_entry() -> Option<std::path::PathBuf> {
     None
 }
 
-/// 尝试启动 Python sidecar
-fn try_spawn_sidecar() -> Option<Child> {
+/// 查找已随 Tauri 打包的 PyInstaller sidecar。
+fn find_bundled_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let binary_prefix = "laimepet-ai-sidecar";
+
+    let candidates = [
+        resource_dir.join("laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe"),
+        resource_dir.join("binaries").join("laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe"),
+        resource_dir.join("laimepet-ai-sidecar.exe"),
+        resource_dir.join("binaries").join("laimepet-ai-sidecar.exe"),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(resource_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if file_name.starts_with(binary_prefix) && file_name.ends_with(".exe") {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+/// 尝试启动 sidecar。Release 打包后优先使用 PyInstaller exe，开发环境回退到 Python 源码入口。
+fn try_spawn_sidecar(app: Option<&tauri::AppHandle>) -> Option<Child> {
+    if let Some(app) = app {
+        if let Some(sidecar_exe) = find_bundled_sidecar(app) {
+            let work_dir = sidecar_exe.parent().unwrap_or(Path::new("."));
+            println!(
+                "[LaiMePet] 启动打包 sidecar: {} (cwd: {})",
+                sidecar_exe.display(),
+                work_dir.display()
+            );
+
+            return Command::new(&sidecar_exe)
+                .current_dir(work_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| {
+                    eprintln!("[LaiMePet] 启动打包 sidecar 失败: {}", e);
+                    e
+                })
+                .ok();
+        }
+    }
+
     let python = find_python()?;
     let main_py = find_sidecar_entry()?;
-    let work_dir = main_py.parent().unwrap_or(std::path::Path::new("."));
+    let work_dir = main_py.parent().unwrap_or(Path::new("."));
 
     println!("[LaiMePet] 启动 Python sidecar: {} {} (cwd: {})", python, main_py.display(), work_dir.display());
 
@@ -264,7 +320,7 @@ fn check_sidecar_port() -> Result<bool, String> {
 ///
 /// 先杀死当前进程，再启动新的。
 #[tauri::command]
-fn restart_sidecar(state: tauri::State<'_, SidecarProcess>) -> Result<String, String> {
+fn restart_sidecar(app: tauri::AppHandle, state: tauri::State<'_, SidecarProcess>) -> Result<String, String> {
     // 杀死旧进程
     if let Ok(mut guard) = state.child.lock() {
         if let Some(ref mut child) = *guard {
@@ -279,14 +335,14 @@ fn restart_sidecar(state: tauri::State<'_, SidecarProcess>) -> Result<String, St
     std::thread::sleep(Duration::from_millis(500));
 
     // 启动新进程
-    match try_spawn_sidecar() {
+    match try_spawn_sidecar(Some(&app)) {
         Some(child) => {
             let pid = child.id();
             state.set(child);
             println!("[LaiMePet] Sidecar 已重启 (PID {})", pid);
             Ok(format!("restarted (PID {})", pid))
         }
-        None => Err("无法启动 Python sidecar，请检查 Python 是否已安装".into()),
+        None => Err("无法启动 sidecar，请检查打包 exe 或 Python 开发环境".into()),
     }
 }
 
@@ -391,7 +447,7 @@ pub fn run() {
             // ── 自动启动 Python Sidecar ──
             {
                 let sidecar = app.state::<SidecarProcess>();
-                match try_spawn_sidecar() {
+                match try_spawn_sidecar(Some(app.handle())) {
                     Some(child) => {
                         let pid = child.id();
                         sidecar.set(child);
@@ -399,7 +455,7 @@ pub fn run() {
                     }
                     None => {
                         eprintln!("[LaiMePet] 警告: 无法启动 Python sidecar，AI 功能将不可用");
-                        eprintln!("[LaiMePet] 提示: 确保 Python 已安装且 services/main.py 存在");
+                        eprintln!("[LaiMePet] 提示: 确保打包 exe 存在，或 Python 已安装且 services/main.py 存在");
                     }
                 }
             }
