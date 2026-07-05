@@ -58,11 +58,15 @@
       },
       "wix": {
         "upgradeCode": "4d996251-af37-4328-8038-f6ac93981fc0",
-        "language": ["zh-CN", "en-US"]
+        "language": ["zh-CN", "en-US"],
+        "bannerPath": "wix/banner.bmp",
+        "dialogImagePath": "wix/dialog.bmp"
       },
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "wix/nsis-header.bmp",
+        "sidebarImage": "wix/nsis-sidebar.bmp",
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": false,
