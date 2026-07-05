@@ -183,3 +183,26 @@ PyInstaller sidecar 打包配置完成，构建因 PyInstaller 无法安装而�
 **Follow-ups / Risks**
 - 解除 pip no-index/127.0.0.1:9 代理或提供 PyInstaller 离线 wheel 后重新构建
 - NSIS 打包时需包含 src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe
+
+## 2026-07-05 19:51:42 +08:00
+
+**Summary**
+接续 PyInstaller sidecar 打包工作：已生成 Tauri externalBin 所需 sidecar exe，删除重复 services/main.spec，仅保留 services/laimepet-ai-sidecar.spec；修正 tauri.conf.json externalBin 命名，避免 Tauri 重复追加 target triple；云端/Mock 模式 health check 不再 import torch。
+
+**Changed Files**
+- .gitignore
+- services/laimepet-ai-sidecar.spec
+- services/main.spec
+- services/services/inference.py
+- src-tauri/tauri.conf.json
+- src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe
+
+**Verification**
+- PyInstaller 构建成功，生成 343804541 bytes sidecar exe
+- 直接启动 sidecar exe 后 /api/v1/health 返回 200
+- cargo check 通过
+- npm run build 通过，保留既有 Desktop chunk 大小警告
+
+**Follow-ups / Risks**
+- public/models/geigei01-dcef6fdb.glb 当前无代码引用，未纳入本次提交，建议确认是否作为演示模型保留
+- 如需发布安装包，下一步运行完整 npm run tauri -- build 并做 MSI/NSIS 安装冒烟测试

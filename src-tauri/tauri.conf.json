@@ -43,7 +43,7 @@
     "longDescription": "LaiMePet turns real pet photos into a 3D desktop companion that lives on your Windows desktop.",
     "useLocalToolsDir": true,
     "externalBin": [
-      "binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu"
+      "binaries/laimepet-ai-sidecar"
     ],
     "icon": [
       "icons/32x32.png",

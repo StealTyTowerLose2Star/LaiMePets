@@ -2,6 +2,7 @@
 node_modules/
 
 # Build output
+build/
 dist/
 dist-ssr/
 
@@ -39,6 +40,7 @@ venv/
 *.egg-info/
 
 # AI service — generated outputs (test artifacts)
+services/build/
 services/outputs/
 services/uploads/
 

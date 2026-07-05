@@ -76,8 +76,8 @@ hiddenimports = [
     "uvicorn.server",
 ]
 
-# Runtime imports in services/services/inference.py and services/services/preprocessing.py.
-# DashScope is called through HTTPS/curl there, not through the dashscope Python SDK.
+# DashScope is called through HTTPS/curl in services/services/inference.py, not
+# through the dashscope Python SDK.
 hiddenimports += optional_collect_submodules("uvicorn")
 hiddenimports += optional_collect_submodules("rembg")
 hiddenimports += optional_collect_submodules("trimesh")
@@ -88,8 +88,8 @@ datas += optional_collect_data_files("PIL")
 datas += optional_collect_data_files("trimesh")
 
 excludes = [
-    ".venv",
     "node_modules",
+    ".venv",
     "tests",
     "accelerate",
     "diffusers",
@@ -126,7 +126,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name=str(tauri_binaries_dir / sidecar_name),
+    name=sidecar_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -1075,6 +1075,9 @@ def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[byte
 
 def get_gpu_info() -> dict:
     """获取 GPU 信息用于健康检查"""
+    if settings.ai_model not in ("triposr", "instantmesh"):
+        return {"gpu_available": False, "gpu_count": 0, "gpu_name": ""}
+
     try:
         import torch
         return {
