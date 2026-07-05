@@ -121,3 +121,34 @@ src-tauri/src/          # Rust Tauri 桌面壳
 - ❌ 不硬编码颜色/间距（用 Tailwind token）
 - ❌ 不提交 API Key/secret
 - ❌ 不用夜间 Rust features
+
+---
+
+## Codex → Claude Code 收尾反馈
+
+每次 Codex CLI 完成一项代码、构建、测试或环境配置工作后，必须将完成情况反馈给 Claude Code，便于 Claude Code 做项目管理、产品和设计侧同步。
+
+### 反馈位置
+
+- 写入 `.claude/codex-handoff.md`
+- 最新记录追加在文件末尾
+- 记录构建产物路径时只写路径，不提交 `dist/`、`src-tauri/target/` 等生成目录
+
+### 反馈内容
+
+每条记录至少包含：
+
+- 完成摘要：本次实际完成了什么
+- 改动文件：主要源码/配置/文档文件
+- 验证情况：运行过的测试、构建、检查命令及结果
+- 后续事项 / 风险：需要用户或 Claude Code 继续跟进的内容
+
+### 推荐命令
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& .\scripts\report-to-claude-code.ps1 `
+  -Summary '完成 Tauri MSI/NSIS 打包配置并成功构建安装包' `
+  -ChangedFiles 'src-tauri/tauri.conf.json','src-tauri/wix/*' `
+  -Verification 'npm run tauri -- build 成功' `
+  -FollowUps '新终端需要重新加载用户 PATH'"
+```
