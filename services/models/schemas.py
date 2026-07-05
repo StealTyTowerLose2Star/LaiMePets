@@ -112,6 +112,9 @@ class HealthResponse(BaseModel):
     ai_model: str
     ai_device: str
     gpu_available: bool
+    cloud_model: str = ""
+    generation_mode: str = "cloud"
+    supported_formats: list[str] = ["glb"]
 
 
 class ErrorResponse(BaseModel):

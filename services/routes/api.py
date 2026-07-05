@@ -38,13 +38,25 @@ router = APIRouter(prefix="/api/v1", tags=["generation"])
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """服务健康检查 + GPU 状态"""
+    """服务健康检查 + GPU 状态 + 云模型信息"""
     gpu = get_gpu_info()
+    cloud_model = ""
+    generation_mode = "cloud" if settings.ai_model in ("dashscope", "tripo", "meshy", "replicate") else "local"
+    if settings.ai_model == "dashscope":
+        cloud_model = settings.dashscope_model
+    elif settings.ai_model == "tripo":
+        cloud_model = "Tripo AI"
+    elif settings.ai_model == "meshy":
+        cloud_model = settings.meshy_model
+    elif settings.ai_model == "replicate":
+        cloud_model = settings.replicate_model
     return HealthResponse(
         version=settings.app_version,
         ai_model=settings.ai_model,
         ai_device=settings.ai_device,
         gpu_available=gpu["gpu_available"],
+        cloud_model=cloud_model,
+        generation_mode=generation_mode,
     )
 
 

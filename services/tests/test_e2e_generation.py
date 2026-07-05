@@ -8,7 +8,11 @@ import numpy as np
 from PIL import Image
 from fastapi.testclient import TestClient
 
+from config import settings
 from main import app
+
+# E2E 测试使用 mock 模式（无需 GPU / API token）
+settings.ai_model = "mock"
 
 client = TestClient(app)
 

@@ -1,12 +1,35 @@
 ---
 name: be
-description: 切换为后端开发工程师角色 - 负责API设计、数据库设计、服务端架构
+description: (重定向到 Codex) 后端开发任务请在终端中使用 Codex CLI 完成
 ---
 
-请以**后端开发工程师**角色处理当前任务。
+## 后端开发任务 → Codex CLI
 
-首先读取角色系统提示词文件：`.claude/prompts/backend_developer.md`
+这是一个**代码开发任务**。本项目的代码工作（前端、后端、测试）由 **OpenAI Codex CLI** 负责，Claude Code 专注于产品和设计。
 
-严格遵循其中的：
-- **System Prompt**：工作原则（稳定性优先、安全至上、性能意识、清晰约定、可维护性）、技术思考链路、输出规范（API 文档、数据库设计、代码分层、测试覆盖、部署配置）
-- **User Prompt Template**：按模板引导用户提供项目信息、任务类型、已有资源、约束条件等，然后基于用户输入执行对应任务
+### 请在终端中使用 `codex` 命令：
+
+```bash
+cd d:/LaiMePets
+codex "后端需求描述"
+```
+
+示例：
+- `codex "帮我在 inference.py 中添加新的 AI 模型支持"`
+- `codex "审查 services/routes/api.py 的错误处理"`
+- `codex "为 preprocessing.py 写单元测试"`
+
+Codex 已通过 **`AGENTS.md`** 获得了项目上下文（技术栈、目录结构、编码规范、禁止事项等）。
+
+### 项目技术栈速查
+
+| 项 | 内容 |
+|----|------|
+| 框架 | Python FastAPI 0.115 (async/await) |
+| 配置 | pydantic-settings + .env |
+| AI | DashScope/Tripo API + rembg + Replicate |
+| 3D | trimesh |
+| 图像 | Pillow + OpenCV + numpy |
+| 任务队列 | Celery + Redis（开发模式用内存队列） |
+| 数据校验 | Pydantic v2 |
+| 测试 | pytest |

@@ -1,12 +1,11 @@
 """AI 推理服务 — 照片转 3D 模型
 
-支持模型：
-- TripoSR: 单图生成 3D Mesh，GPU ~0.5s（CPU 降级 5-10min）
-- InstantMesh: 单图生成 3D Mesh，GPU ~1s
-- mock: 开发模式，生成占位模型（无需 GPU）
-
-架构：使用 HuggingFace diffusers pipeline 加载模型，
-或通过 Replicate API 调用云端推理。
+支持后端：
+- Meshy.ai: 云端 API（推荐！国内直连，免费 200 credits/月）
+- Replicate: 云端 API（需代理 + 充值，微软 TRELLIS）
+- TripoSR: 本地 GPU 推理（需 NVIDIA GPU 6GB+ 显存）
+- InstantMesh: 本地 GPU 推理（备用）
+- mock: 开发模式，生成占位模型
 """
 
 from __future__ import annotations
@@ -14,11 +13,14 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+import urllib.request
+import urllib.error
 
 import numpy as np
 from PIL import Image
@@ -80,6 +82,12 @@ def _load_model():
         _model = _load_instantmesh()
     elif model_type == "replicate":
         _model = _load_replicate_pipeline()
+    elif model_type == "meshy":
+        _model = _load_meshy_pipeline()
+    elif model_type == "tripo":
+        _model = _load_tripo_pipeline()
+    elif model_type == "dashscope":
+        _model = _load_dashscope_pipeline()
     else:
         _model = _create_mock_pipeline()
 
@@ -184,6 +192,98 @@ def _load_replicate_pipeline():
         "device": "cloud",
         "type": "replicate",
         "model_id": model_id,
+    }
+
+
+def _load_meshy_pipeline():
+    """
+    加载 Meshy.ai API 客户端（云端推理）。
+
+    无需 GPU，国内直连，免费 200 credits/月。
+    需要设置环境变量 MESHY_API_KEY 或在 config 中配置。
+    """
+    import os
+
+    api_key = settings.meshy_api_key or os.environ.get("MESHY_API_KEY", "")
+
+    if not api_key:
+        raise RuntimeError(
+            "Meshy API key 未设置。请：\n"
+            "1. 访问 https://meshy.ai 注册账号\n"
+            "2. 在 Settings → API 中获取 API Key\n"
+            "3. 设置环境变量: set MESHY_API_KEY=msy_xxx\n"
+            "4. 或在 services/.env 文件中添加: MESHY_API_KEY=msy_xxx"
+        )
+
+    print(f"[Meshy] 使用模型: {settings.meshy_model}")
+
+    return {
+        "pipeline": None,
+        "device": "cloud",
+        "type": "meshy",
+        "api_key": api_key,
+        "model": settings.meshy_model,
+    }
+
+
+def _load_tripo_pipeline():
+    """
+    加载 Tripo AI API 客户端（云端推理）。
+
+    无需 GPU，国内直连，免费 300 credits/月。
+    需要设置环境变量 TRIPO_API_KEY 或在 config 中配置。
+    """
+    import os
+
+    api_key = settings.tripo_api_key or os.environ.get("TRIPO_API_KEY", "")
+
+    if not api_key:
+        raise RuntimeError(
+            "Tripo API key 未设置。请：\n"
+            "1. 访问 https://platform.tripo3d.ai 注册账号\n"
+            "2. 获取 API Key\n"
+            "3. 设置环境变量: set TRIPO_API_KEY=tcli_xxx\n"
+            "4. 或在 services/.env 文件中添加: TRIPO_API_KEY=tcli_xxx"
+        )
+
+    print(f"[Tripo] 使用 Tripo AI API")
+
+    return {
+        "pipeline": None,
+        "device": "cloud",
+        "type": "tripo",
+        "api_key": api_key,
+    }
+
+
+def _load_dashscope_pipeline():
+    """
+    加载阿里云百炼 DashScope API 客户端。
+
+    国内直连，无需代理，阿里云 Tripo 模型。
+    需要设置环境变量 DASHSCOPE_API_KEY。
+    """
+    import os
+
+    api_key = settings.dashscope_api_key or os.environ.get("DASHSCOPE_API_KEY", "")
+
+    if not api_key:
+        raise RuntimeError(
+            "DashScope API key 未设置。请：\n"
+            "1. 访问 https://bailian.console.aliyun.com 开通 Tripo 模型\n"
+            "2. 获取 API Key（格式: sk-xxx）\n"
+            "3. 设置环境变量: set DASHSCOPE_API_KEY=sk-xxx\n"
+            "4. 或在 services/.env 文件中添加: DASHSCOPE_API_KEY=sk-xxx"
+        )
+
+    print(f"[DashScope] 使用模型: {settings.dashscope_model} (阿里云百炼)")
+
+    return {
+        "pipeline": None,
+        "device": "cloud",
+        "type": "dashscope",
+        "api_key": api_key,
+        "model": settings.dashscope_model,
     }
 
 
@@ -365,6 +465,15 @@ def _run_inference(photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
     elif model["type"] == "replicate":
         return _run_replicate(model, photos, realism)
 
+    elif model["type"] == "meshy":
+        return _run_meshy(model, photos, realism)
+
+    elif model["type"] == "tripo":
+        return _run_tripo(model, photos, realism)
+
+    elif model["type"] == "dashscope":
+        return _run_dashscope(model, photos, realism)
+
     else:
         raise ValueError(f"未知模型类型: {model['type']}")
 
@@ -513,7 +622,6 @@ def _run_replicate(model: dict, photos: list[bytes], realism: int) -> tuple[byte
         print(f"[Replicate] GLB URL: {glb_url[:80]}...")
 
         # 下载 GLB
-        import urllib.request
         with urllib.request.urlopen(glb_url) as resp:
             glb_data = resp.read()
 
@@ -538,6 +646,367 @@ def _run_replicate(model: dict, photos: list[bytes], realism: int) -> tuple[byte
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+def _run_meshy(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
+    """
+    Meshy.ai API 推理 — 云端图像→3D 模型。
+
+    无需 GPU，国内直连，免费 200 credits/月。
+    使用 Meshy 6 模型（最新）生成高质量 3D 模型。
+
+    流程：
+    1. 将第一张照片编码为 data URI
+    2. POST /openapi/v1/image-to-3d 创建任务
+    3. 轮询 GET /openapi/v1/image-to-3d/:id 直到完成
+    4. 下载 model_urls.glb
+    5. 生成缩略图
+    """
+    import base64
+    import time
+
+    api_key = model["api_key"]
+    api_base = "https://api.meshy.ai/openapi/v1"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+
+    # 编码为 data URI（Meshy 支持直传）
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="JPEG", quality=90)
+    data_uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+
+    # ── 创建任务 ──
+    print(f"[Meshy] 创建 Image-to-3D 任务...")
+    create_payload = {
+        "image_url": data_uri,
+        "ai_model": settings.meshy_model,
+        "enable_pbr": settings.meshy_enable_pbr,
+        "should_remesh": True,
+        "target_polycount": settings.meshy_target_polycount,
+        "target_formats": ["glb"],
+        "should_texture": True,
+    }
+
+    resp = _meshy_request("POST", f"{api_base}/image-to-3d", headers, create_payload)
+    task_id = resp.get("result")
+    if not task_id:
+        raise RuntimeError(f"Meshy 任务创建失败: {resp}")
+
+    print(f"[Meshy] 任务 ID: {task_id}")
+
+    # ── 轮询任务状态 ──
+    print(f"[Meshy] 等待推理完成...")
+    status = "IN_PROGRESS"
+    for i in range(300):  # Max 300 * 2s = 600s
+        time.sleep(2)
+        task = _meshy_request("GET", f"{api_base}/image-to-3d/{task_id}", headers)
+        status = task.get("status", "UNKNOWN")
+        progress = task.get("progress", 0)
+        if i % 5 == 0:
+            print(f"[Meshy] [{progress}%] {status}")
+        if status in ("SUCCEEDED", "FAILED", "EXPIRED"):
+            break
+
+    if status != "SUCCEEDED":
+        error_msg = task.get("error_message", task.get("message", "未知错误"))
+        raise RuntimeError(f"Meshy 任务失败 ({status}): {error_msg}")
+
+    credits = task.get("consumed_credits", "?")
+    print(f"[Meshy] 推理完成！消耗 {credits} credits")
+
+    # ── 下载 GLB ──
+    model_urls = task.get("model_urls", {})
+    glb_url = model_urls.get("glb")
+    if not glb_url:
+        raise RuntimeError(f"Meshy 未返回 GLB 模型 URL。可用格式: {list(model_urls.keys())}")
+
+    print(f"[Meshy] 下载 GLB: {glb_url[:80]}...")
+    glb_data = _meshy_download(glb_url)
+
+    print(f"[Meshy] GLB 下载完成: {len(glb_data):,} bytes")
+
+    # 验证 GLB
+    magic = int.from_bytes(glb_data[:4], "little")
+    if magic != 0x46546C67:
+        print(f"[Meshy] 警告: GLB magic 不匹配 ({magic:#x})")
+
+    # 缩略图
+    thumb = img.resize((256, 256), Image.LANCZOS)
+    thumb_buf = io.BytesIO()
+    thumb.save(thumb_buf, format="PNG")
+    thumb_data = thumb_buf.getvalue()
+
+    return glb_data, thumb_data
+
+
+def _meshy_request(method: str, url: str, headers: dict, payload: dict = None) -> dict:
+    """发送 Meshy API 请求（支持代理）"""
+    import json as _json
+
+    req_data = _json.dumps(payload).encode("utf-8") if payload else None
+    req = urllib.request.Request(url, data=req_data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Meshy API HTTP {e.code}: {body[:300]}")
+
+
+def _meshy_download(url: str) -> bytes:
+    """从 Meshy 返回的 URL 下载文件"""
+    import httpx
+    # Meshy 使用国内 CDN，直连即可
+    with httpx.Client(timeout=120, follow_redirects=True) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return resp.content
+
+
+def _run_tripo(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
+    """
+    Tripo AI API 推理 — 云端图像→3D 模型。
+
+    免费 300 credits/月，国内直连，无需代理。
+    使用 image_to_model 任务类型。
+
+    流程：
+    1. 将照片编码为 data URI
+    2. POST /v2/openapi/task 创建 image_to_model 任务
+    3. 轮询 GET /v2/openapi/task/{task_id} 直到完成
+    4. 下载 GLB 模型
+    """
+    import base64
+    import time
+
+    api_key = model["api_key"]
+    api_base = "https://api.tripo3d.ai/v2/openapi"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+
+    # 编码为 data URI
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="JPEG", quality=90)
+    data_uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+
+    # ── 创建任务 ──
+    print(f"[Tripo] 创建 image_to_model 任务...")
+    create_payload = {
+        "type": "image_to_model",
+        "image": data_uri,
+        "texture_quality": settings.tripo_texture_quality,
+        "face_limit": settings.tripo_face_limit,
+        "auto_scale": settings.tripo_auto_scale,
+    }
+
+    req_data = json.dumps(create_payload).encode("utf-8")
+    req = urllib.request.Request(f"{api_base}/task", data=req_data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Tripo API HTTP {e.code}: {body[:300]}")
+
+    task_id = result.get("data", {}).get("task_id")
+    if not task_id:
+        raise RuntimeError(f"Tripo 任务创建失败: {result}")
+
+    print(f"[Tripo] 任务 ID: {task_id}")
+
+    # ── 轮询 ──
+    print(f"[Tripo] 等待推理完成...")
+    status = "running"
+    for i in range(150):  # Max 150 * 2s = 300s
+        time.sleep(2)
+        req = urllib.request.Request(f"{api_base}/task/{task_id}", headers={
+            "Authorization": f"Bearer {api_key}",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                task = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Tripo poll HTTP {e.code}: {body[:200]}")
+
+        status = task.get("data", {}).get("status", "running")
+        progress = task.get("data", {}).get("progress", 0)
+        if i % 5 == 0:
+            print(f"[Tripo] [{progress}%] {status}")
+
+        if status in ("success", "failed", "cancelled", "error"):
+            break
+
+    if status != "success":
+        error = task.get("data", {}).get("error", task.get("message", "未知错误"))
+        raise RuntimeError(f"Tripo 任务失败 ({status}): {error}")
+
+    print(f"[Tripo] 推理完成！")
+
+    # ── 下载 GLB ──
+    outputs = task.get("data", {}).get("output", {})
+    model_url = outputs.get("model")  # GLB URL
+
+    if not model_url:
+        # Fallback: try other keys (pbr_model, base_model, etc.)
+        for key in ["pbr_model", "glb", "model_file"]:
+            if key in outputs:
+                model_url = outputs[key]
+                break
+    if not model_url:
+        raise RuntimeError(f"Tripo 未返回模型 URL。Output keys: {list(outputs.keys())}")
+
+    print(f"[Tripo] 下载模型: {str(model_url)[:80]}...")
+    import httpx
+    with httpx.Client(timeout=120, follow_redirects=True) as client:
+        resp = client.get(model_url)
+        resp.raise_for_status()
+        glb_data = resp.content
+
+    print(f"[Tripo] 下载完成: {len(glb_data):,} bytes")
+
+    # 验证
+    magic = int.from_bytes(glb_data[:4], "little")
+    if magic != 0x46546C67:
+        print(f"[Tripo] 警告: GLB magic {magic:#x}")
+
+    # 缩略图
+    thumb = img.resize((256, 256), Image.LANCZOS)
+    thumb_buf = io.BytesIO()
+    thumb.save(thumb_buf, format="PNG")
+    thumb_data = thumb_buf.getvalue()
+
+    return glb_data, thumb_data
+
+
+def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, bytes]:
+    """
+    阿里云百炼 DashScope API — Tripo 模型推理。
+
+    国内直连，无需代理。使用 subprocess+curl 绕过 Python SSL 问题。
+    支持 Tripo/Tripo-P1.0（专业版，2万面，快速）和 Tripo/Tripo-H3.1（高精度）。
+
+    流程：
+    1. 照片 → data URI
+    2. curl POST → 创建任务
+    3. curl GET → 轮询状态
+    4. curl -o → 下载 GLB
+    """
+    import base64
+    import time
+    import subprocess
+    import tempfile as tmpfile_mod
+
+    api_key = model["api_key"]
+    dashscope_model = model["model"]
+
+    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+
+    # 编码为 data URI
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="JPEG", quality=90)
+    data_uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+
+    # ── 创建任务 ──
+    print(f"[DashScope] 创建 image-to-3d 任务 ({dashscope_model})...")
+    create_payload = json.dumps({
+        "model": dashscope_model,
+        "input": {"image": data_uri},
+        "parameters": {
+            "texture_quality": settings.dashscope_texture_quality,
+            "pbr": settings.dashscope_pbr,
+        },
+    })
+
+    # 写入临时文件（避免 Windows 命令行长度限制）
+    tmp = tmpfile_mod.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+    tmp.write(create_payload)
+    tmp_path = tmp.name
+    tmp.close()
+
+    try:
+        result = subprocess.run([
+            "curl", "-s", "--noproxy", "*",
+            "-H", f"Authorization: Bearer {api_key}",
+            "-H", "X-DashScope-Async: enable",
+            "-H", "Content-Type: application/json",
+            "-d", f"@{tmp_path}",
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/3d-generation",
+        ], capture_output=True, timeout=60)
+        resp = json.loads(result.stdout.decode("utf-8", errors="replace"))
+    finally:
+        os.unlink(tmp_path)
+
+    output = resp.get("output", {})
+    task_id = output.get("task_id")
+    if not task_id:
+        raise RuntimeError(f"DashScope 任务创建失败: {resp}")
+
+    print(f"[DashScope] 任务 ID: {task_id}, 状态: {output.get('task_status')}")
+
+    # ── 轮询 ──
+    print(f"[DashScope] 等待推理完成...")
+    status = "PENDING"
+    for i in range(200):
+        time.sleep(2)
+        result = subprocess.run([
+            "curl", "-s", "--noproxy", "*",
+            "-H", f"Authorization: Bearer {api_key}",
+            f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}",
+        ], capture_output=True, timeout=30)
+        task_result = json.loads(result.stdout.decode("utf-8", errors="replace"))
+        output = task_result.get("output", {})
+        status = output.get("task_status", "UNKNOWN")
+        if i % 5 == 0:
+            print(f"[DashScope] [{status}]")
+        if status in ("SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"):
+            break
+
+    if status != "SUCCEEDED":
+        msg = output.get("message", task_result.get("message", "未知错误"))
+        raise RuntimeError(f"DashScope 任务失败 ({status}): {msg}")
+
+    print(f"[DashScope] 推理完成！")
+
+    # ── 下载 GLB ──
+    results = output.get("results", [])
+    model_url = None
+    if results:
+        r = results[0]
+        model_url = r.get("pbr_model_url") or r.get("base_model_url")
+    if not model_url:
+        raise RuntimeError(f"DashScope 未返回模型 URL。Results: {results}")
+
+    print(f"[DashScope] 下载模型: {model_url[:80]}...")
+
+    dl_tmp = tmpfile_mod.NamedTemporaryFile(suffix=".glb", delete=False)
+    dl_path = dl_tmp.name
+    dl_tmp.close()
+    try:
+        subprocess.run([
+            "curl", "-s", "--noproxy", "*", "-o", dl_path, "-L", model_url,
+        ], timeout=120, check=True)
+        with open(dl_path, "rb") as f:
+            glb_data = f.read()
+    finally:
+        os.unlink(dl_path)
+
+    print(f"[DashScope] 下载完成: {len(glb_data):,} bytes")
+
+    # 验证
+    magic = int.from_bytes(glb_data[:4], "little")
+    if magic != 0x46546C67:
+        print(f"[DashScope] 警告: GLB magic {magic:#x}")
+
+    # 缩略图
+    thumb = img.resize((256, 256), Image.LANCZOS)
+    thumb_buf = io.BytesIO()
+    thumb.save(thumb_buf, format="PNG")
+    thumb_data = thumb_buf.getvalue()
+
+    return glb_data, thumb_data
 
 
 def get_gpu_info() -> dict:

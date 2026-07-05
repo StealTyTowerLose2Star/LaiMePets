@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { InteractionType, PetProfile, PetState } from '@/types';
+import { listPets } from '@/services/api';
 
 interface PetStoreState {
   // 宠物列表
@@ -19,6 +20,14 @@ interface PetStoreState {
   recordInteraction: (type: InteractionType) => void;
 }
 
+function persistProfiles(profiles: PetProfile[]): void {
+  try {
+    localStorage.setItem('lai-me-pet-profiles', JSON.stringify(profiles));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 export const usePetStore = create<PetStoreState>((set) => ({
   profiles: [],
   isProfilesLoaded: false,
@@ -32,7 +41,38 @@ export const usePetStore = create<PetStoreState>((set) => ({
   },
 
   loadProfiles: async () => {
-    // TODO: Sprint 2 对接后端宠物列表 API / Rust 持久化
+    try {
+      // 优先从后端 API 加载
+      const pets = await listPets();
+      if (pets.length > 0) {
+        const profiles: PetProfile[] = pets.map((p) => ({
+          id: p.pet_id,
+          name: p.pet_name,
+          createdAt: p.created_at,
+          modelPath: p.model_url,
+          thumbnailPath: p.thumbnail_url,
+          realism: 50,
+          isDefault: false,
+          species: 'cat' as const,
+        }));
+        persistProfiles(profiles);
+        set((state) => ({
+          profiles,
+          isProfilesLoaded: true,
+          petState: {
+            ...state.petState,
+            currentProfileId:
+              state.petState.currentProfileId ?? profiles[0]?.id ?? null,
+          },
+        }));
+        return;
+      }
+    } catch {
+      // 后端不可用时降级到 localStorage
+      console.debug('[petStore] 后端 API 不可用，使用本地缓存');
+    }
+
+    // 降级：localStorage
     try {
       const stored = localStorage.getItem('lai-me-pet-profiles');
       if (stored) {
@@ -57,7 +97,7 @@ export const usePetStore = create<PetStoreState>((set) => ({
   addProfile: (profile: PetProfile) =>
     set((state) => {
       const profiles = [...state.profiles, profile];
-      localStorage.setItem('lai-me-pet-profiles', JSON.stringify(profiles));
+      persistProfiles(profiles);
       return {
         profiles,
         petState: {
@@ -70,7 +110,7 @@ export const usePetStore = create<PetStoreState>((set) => ({
   removeProfile: (id: string) =>
     set((state) => {
       const profiles = state.profiles.filter((p) => p.id !== id);
-      localStorage.setItem('lai-me-pet-profiles', JSON.stringify(profiles));
+      persistProfiles(profiles);
       return {
         profiles,
         petState: {
@@ -89,7 +129,7 @@ export const usePetStore = create<PetStoreState>((set) => ({
         ...p,
         isDefault: p.id === id,
       }));
-      localStorage.setItem('lai-me-pet-profiles', JSON.stringify(profiles));
+      persistProfiles(profiles);
       return { profiles };
     }),
 
