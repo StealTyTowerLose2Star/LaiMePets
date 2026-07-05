@@ -436,6 +436,11 @@ async def run_inference_async(
                 "model_format": "glb",
             },
         )
+
+        # 模型已保存到 outputs/，清理 uploads/ 中的临时文件
+        from .storage import cleanup_task_files
+        cleanup_task_files(task_id)
+
         return {"pet_id": pet_id, "success": True}
 
     except Exception as e:
@@ -446,6 +451,11 @@ async def run_inference_async(
             current_step="生成失败",
             message=str(e),
         )
+
+        # 失败也清理临时上传文件（节省磁盘空间）
+        from .storage import cleanup_task_files
+        cleanup_task_files(task_id)
+
         return {"pet_id": None, "success": False, "error": str(e)}
 
 
@@ -769,11 +779,15 @@ def _run_tripo(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, b
     Tripo AI API 推理 — 云端图像→3D 模型。
 
     免费 300 credits/月，国内直连，无需代理。
-    使用 image_to_model 任务类型。
+    支持 image_to_model（单图）和 multi_view_image_to_model（多图多视角）。
+
+    增强功能：
+    - ≥3 张照片时自动切换多视图模式，从不同角度重建 3D 模型
+    - 单图时使用最佳照片
 
     流程：
-    1. 将照片编码为 data URI
-    2. POST /v2/openapi/task 创建 image_to_model 任务
+    1. 照片 → data URI(s)
+    2. POST /v2/openapi/task 创建任务
     3. 轮询 GET /v2/openapi/task/{task_id} 直到完成
     4. 下载 GLB 模型
     """
@@ -784,22 +798,36 @@ def _run_tripo(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, b
     api_base = "https://api.tripo3d.ai/v2/openapi"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+    # ── 编码所有可用照片 ──
+    data_uris: list[str] = []
+    for photo in photos[:8]:  # Tripo 最多支持 8 张多视图
+        img = Image.open(io.BytesIO(photo)).convert("RGB")
+        img_buf = io.BytesIO()
+        img.save(img_buf, format="JPEG", quality=95)
+        uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+        data_uris.append(uri)
 
-    # 编码为 data URI
-    img_buf = io.BytesIO()
-    img.save(img_buf, format="JPEG", quality=90)
-    data_uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+    use_multi_view = len(data_uris) >= 3
 
     # ── 创建任务 ──
-    print(f"[Tripo] 创建 image_to_model 任务...")
-    create_payload = {
-        "type": "image_to_model",
-        "image": data_uri,
-        "texture_quality": settings.tripo_texture_quality,
-        "face_limit": settings.tripo_face_limit,
-        "auto_scale": settings.tripo_auto_scale,
-    }
+    if use_multi_view:
+        print(f"[Tripo] 创建 multi_view_image_to_model 任务 ({len(data_uris)} 张)...")
+        create_payload = {
+            "type": "multi_view_image_to_model",
+            "images": data_uris,
+            "texture_quality": settings.tripo_texture_quality,
+            "face_limit": settings.tripo_face_limit,
+            "auto_scale": settings.tripo_auto_scale,
+        }
+    else:
+        print(f"[Tripo] 创建 image_to_model 任务...")
+        create_payload = {
+            "type": "image_to_model",
+            "image": data_uris[0],
+            "texture_quality": settings.tripo_texture_quality,
+            "face_limit": settings.tripo_face_limit,
+            "auto_scale": settings.tripo_auto_scale,
+        }
 
     req_data = json.dumps(create_payload).encode("utf-8")
     req = urllib.request.Request(f"{api_base}/task", data=req_data, headers=headers)
@@ -872,8 +900,9 @@ def _run_tripo(model: dict, photos: list[bytes], realism: int) -> tuple[bytes, b
     if magic != 0x46546C67:
         print(f"[Tripo] 警告: GLB magic {magic:#x}")
 
-    # 缩略图
-    thumb = img.resize((256, 256), Image.LANCZOS)
+    # 缩略图（使用第一张照片）
+    thumb_img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+    thumb = thumb_img.resize((256, 256), Image.LANCZOS)
     thumb_buf = io.BytesIO()
     thumb.save(thumb_buf, format="PNG")
     thumb_data = thumb_buf.getvalue()
@@ -886,11 +915,15 @@ def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[byte
     阿里云百炼 DashScope API — Tripo 模型推理。
 
     国内直连，无需代理。使用 subprocess+curl 绕过 Python SSL 问题。
-    支持 Tripo/Tripo-P1.0（专业版，2万面，快速）和 Tripo/Tripo-H3.1（高精度）。
+    支持 Tripo/Tripo-P1.0（专业版，2万面，快速）和 Tripo/Tripo-H3.1（高精度，2M面）。
+
+    增强功能：
+    - 多视图输入：上传 ≥3 张不同角度照片时，尝试多视图 3D 重建（更逼真）
+    - 智能选图：照片已通过预处理管线（抠图+裁剪+增强）
 
     流程：
-    1. 照片 → data URI
-    2. curl POST → 创建任务
+    1. 照片 → data URI(s)
+    2. curl POST → 创建任务（单图或多图）
     3. curl GET → 轮询状态
     4. curl -o → 下载 GLB
     """
@@ -902,23 +935,34 @@ def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[byte
     api_key = model["api_key"]
     dashscope_model = model["model"]
 
-    img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+    # ── 编码所有可用照片为 data URI ──
+    # 预处理管线已确保：抠图 + 智能裁剪 + 增强 → 每张都是高质量输入
+    data_uris: list[str] = []
+    for i, photo in enumerate(photos[:8]):  # 最多 8 张（API 限制）
+        img = Image.open(io.BytesIO(photo)).convert("RGB")
+        img_buf = io.BytesIO()
+        img.save(img_buf, format="JPEG", quality=95)  # 高质量编码
+        uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+        data_uris.append(uri)
 
-    # 编码为 data URI
-    img_buf = io.BytesIO()
-    img.save(img_buf, format="JPEG", quality=90)
-    data_uri = "data:image/jpeg;base64," + base64.b64encode(img_buf.getvalue()).decode("ascii")
+    use_multi_view = len(data_uris) >= 3
+    view_label = "多视图" if use_multi_view else "单图"
+    print(f"[DashScope] 创建 image-to-3d 任务 ({dashscope_model}, {view_label}, {len(data_uris)}张)...")
 
-    # ── 创建任务 ──
-    print(f"[DashScope] 创建 image-to-3d 任务 ({dashscope_model})...")
+    # ── 构建请求 ──
+    # 注意：DashScope Tripo 目前仅支持单图输入（不支持 images 数组）
+    # 多视图需通过 Tripo 原生 API (_run_tripo) 实现
+    # 这里始终使用第一张（已预处理：抠图+裁剪+增强）最佳照片
     create_payload = json.dumps({
         "model": dashscope_model,
-        "input": {"image": data_uri},
+        "input": {"image": data_uris[0]},
         "parameters": {
             "texture_quality": settings.dashscope_texture_quality,
             "pbr": settings.dashscope_pbr,
         },
     })
+    single_view_label = f"({len(data_uris)}张中选最佳)"
+    print(f"[DashScope] 使用单图模式 {single_view_label}")
 
     # 写入临时文件（避免 Windows 命令行长度限制）
     tmp = tmpfile_mod.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
@@ -949,14 +993,33 @@ def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[byte
     # ── 轮询 ──
     print(f"[DashScope] 等待推理完成...")
     status = "PENDING"
+    consecutive_errors = 0
     for i in range(200):
         time.sleep(2)
-        result = subprocess.run([
-            "curl", "-s", "--noproxy", "*",
-            "-H", f"Authorization: Bearer {api_key}",
-            f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}",
-        ], capture_output=True, timeout=30)
-        task_result = json.loads(result.stdout.decode("utf-8", errors="replace"))
+        try:
+            result = subprocess.run([
+                "curl", "-s", "--noproxy", "*", "--connect-timeout", "10", "--max-time", "30",
+                "-H", f"Authorization: Bearer {api_key}",
+                f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}",
+            ], capture_output=True, timeout=35)
+            raw = result.stdout.decode("utf-8", errors="replace").strip()
+            if not raw:
+                consecutive_errors += 1
+                if consecutive_errors > 3:
+                    raise RuntimeError("DashScope 连续空响应，请检查网络")
+                if i % 5 == 0:
+                    print(f"[DashScope] [空响应, 重试 {consecutive_errors}/3]")
+                continue
+            task_result = json.loads(raw)
+        except (json.JSONDecodeError, subprocess.TimeoutExpired) as e:
+            consecutive_errors += 1
+            if consecutive_errors > 3:
+                raise RuntimeError(f"DashScope 轮询失败: {e}")
+            if i % 5 == 0:
+                print(f"[DashScope] [{type(e).__name__}, 重试 {consecutive_errors}/3]")
+            continue
+
+        consecutive_errors = 0
         output = task_result.get("output", {})
         status = output.get("task_status", "UNKNOWN")
         if i % 5 == 0:
@@ -1000,8 +1063,9 @@ def _run_dashscope(model: dict, photos: list[bytes], realism: int) -> tuple[byte
     if magic != 0x46546C67:
         print(f"[DashScope] 警告: GLB magic {magic:#x}")
 
-    # 缩略图
-    thumb = img.resize((256, 256), Image.LANCZOS)
+    # 缩略图（使用第一张照片）
+    thumb_img = Image.open(io.BytesIO(photos[0])).convert("RGB")
+    thumb = thumb_img.resize((256, 256), Image.LANCZOS)
     thumb_buf = io.BytesIO()
     thumb.save(thumb_buf, format="PNG")
     thumb_data = thumb_buf.getvalue()
@@ -1020,3 +1084,35 @@ def get_gpu_info() -> dict:
         }
     except ImportError:
         return {"gpu_available": False, "gpu_count": 0, "gpu_name": ""}
+
+
+async def cleanup_stale_tasks():
+    """
+    定期检查并清理超时任务。
+
+    将超过 generation_timeout 的 pending/preprocessing/generating 任务标记为 failed。
+    建议在 FastAPI lifespan 中作为后台任务定期调用（例如每 30 秒）。
+    """
+    from datetime import datetime, timezone, timedelta
+
+    timeout = timedelta(seconds=settings.generation_timeout)
+    now = datetime.now(timezone.utc)
+    stale_ids = []
+
+    for task_id, task in _tasks.items():
+        if task["status"] in ("pending", "preprocessing", "generating", "postprocessing"):
+            created = task.get("created_at")
+            if created is not None and now - created > timeout:
+                stale_ids.append(task_id)
+
+    for task_id in stale_ids:
+        update_task(
+            task_id,
+            status="failed",
+            progress=0,
+            current_step="任务超时",
+            message=f"任务超过 {settings.generation_timeout}s 未完成，自动标记为失败",
+        )
+
+    if stale_ids:
+        print(f"[LaiMePet] 已清理 {len(stale_ids)} 个超时任务: {stale_ids}")

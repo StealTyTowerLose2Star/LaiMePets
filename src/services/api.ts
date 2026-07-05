@@ -1,11 +1,20 @@
 /**
  * LaiMePet FastAPI 后端 API 客户端
  *
- * 通过 Vite proxy (/api → localhost:8000) 与 AI 服务通信。
+ * 在 Tauri 环境中直接连接 localhost:8000，
+ * 在浏览器开发模式中使用 Vite proxy (/api → localhost:8000)。
  * 所有函数均为异步，返回解析后的 JSON 数据。
  */
 
-const API_BASE = '/api/v1';
+// ── 环境检测 ──
+
+function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+const API_BASE = isTauriEnv()
+  ? 'http://localhost:8000/api/v1'
+  : '/api/v1';
 
 // ── 类型定义 ──
 

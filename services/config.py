@@ -68,11 +68,13 @@ class Settings(BaseSettings):
     # 从 https://bailian.console.aliyun.com 开通 Tripo 模型，获取 API Key
     # 国内直连，无需代理
     dashscope_api_key: str = ""
-    # 模型: "Tripo/Tripo-H3.1" (高精度, 2M面) | "Tripo/Tripo-P1.0" (专业, 2万面, 更快)
+    # 模型选择:
+    #   "Tripo/Tripo-P1.0" — 专业版, ~5K面, 2.5MB, 推荐（桌面宠物最佳平衡）
+    #   "Tripo/Tripo-H3.1" — 高精度, ~1.5M面, 42MB（极致细节，但加载慢）
     dashscope_model: str = "Tripo/Tripo-P1.0"
-    # 纹理质量: "standard" | "detailed"
-    dashscope_texture_quality: str = "standard"
-    # 是否生成 PBR 材质
+    # 纹理质量: "detailed" (高精度纹理, 推荐) | "standard" (标准)
+    dashscope_texture_quality: str = "detailed"
+    # 是否生成 PBR 材质（metallic/roughness）
     dashscope_pbr: bool = True
 
     # ── 任务队列 ──
@@ -97,7 +99,18 @@ class Settings(BaseSettings):
     min_photo_resolution: tuple[int, int] = (256, 256)
     supported_formats: set[str] = {".jpg", ".jpeg", ".png", ".webp"}
 
+    # ── 背景移除 ──
+    # 是否启用 rembg 背景移除（u2net 模型，首次运行自动下载 ~176MB）
+    enable_background_removal: bool = True
+
+    # ── OpenAI API（已弃用：用户通过 Codex CLI 使用 AI 辅助编码）──
+    # openai_api_key: str = ""
+    # openai_model: str = "gpt-4o"
+    # openai_code_model: str = "o4-mini"
+    # openai_base_url: str = "https://api.openai.com/v1"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
+w

@@ -8,7 +8,7 @@ rust-version = "1.77"
 
 [lib]
 name = "lai_me_pet_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
+crate-type = ["lib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -27,3 +27,9 @@ serde_json = "1"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Windows GNU 工具链 debug 构建: 禁用 debug info 避免 export ordinal overflow
+# DLL exports 有 65535 上限，debug symbols 会超出此限制
+[profile.dev]
+debug = 0
+codegen-units = 16

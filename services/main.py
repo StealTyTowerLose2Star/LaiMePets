@@ -12,14 +12,38 @@ from routes.api import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动/关闭时的操作"""
+    import asyncio
+
     # 启动时创建必要目录
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     print(f"[LaiMePet AI] 启动完成 — 模型: {settings.ai_model}, 设备: {settings.ai_device}")
     print(f"  上传目录: {settings.upload_dir.absolute()}")
     print(f"  输出目录: {settings.output_dir.absolute()}")
+
+    # 启动超时任务清理协程
+    stop_cleanup = asyncio.Event()
+
+    async def _cleanup_loop():
+        from services.inference import cleanup_stale_tasks
+        while not stop_cleanup.is_set():
+            try:
+                await asyncio.sleep(30)  # 每 30 秒检查一次
+                await cleanup_stale_tasks()
+            except Exception as e:
+                print(f"[LaiMePet] 清理协程异常: {e}")
+
+    cleanup_task = asyncio.create_task(_cleanup_loop())
+
     yield
-    # 关闭时清理（按需）
+
+    # 关闭时停止清理协程
+    stop_cleanup.set()
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(

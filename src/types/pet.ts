@@ -19,6 +19,18 @@ export type DisplayMode = 'float' | 'window';
 /** 性能等级 */
 export type PerformanceTier = 'low' | 'medium' | 'high';
 
+/** 写实度着色器等级 */
+export type RealismTier = 'toon' | 'hybrid' | 'pbr';
+
+/** 写实度配置（由 0-100 滑块值计算得出） */
+export interface RealismConfig {
+  tier: RealismTier;
+  /** 混合系数：0 = 完全 toon, 1 = 完全 PBR */
+  blendFactor: number;
+  /** 轮廓线粗细 (世界单位)，0 = 禁用 */
+  outlineThickness: number;
+}
+
 /** 宠物形象数据 */
 export interface PetProfile {
   id: string;
@@ -61,3 +73,19 @@ export interface InteractionRecord {
   timestamp: number;
   petId: string;
 }
+
+/** GLB 模型元数据（客户端提取或后端返回） */
+export interface GlbMetadata {
+  fileSizeBytes: number;
+  vertexCount: number;
+  triangleCount: number;
+  meshCount: number;
+  materialCount: number;
+  animationClipCount: number;
+  animationClipNames: string[];
+  hasSkeleton: boolean;
+  boundingBox: { min: [number, number, number]; max: [number, number, number] };
+}
+
+/** 模型加载阶段 */
+export type ModelLoadPhase = 'idle' | 'fetching' | 'parsing' | 'ready' | 'error';

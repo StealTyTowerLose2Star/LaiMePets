@@ -185,9 +185,9 @@ DashScope/Tripo 输出的 mesh 大概率 **不带骨骼绑定**。
 
 | 对接项 | 当前状态 | 需要的改动 |
 |--------|---------|-----------|
-| Tauri 调用 FastAPI | `tauri-service.ts` 有 `invoke` 抽象 | 新增 `generatePet()` / `pollTaskStatus()` 等命令 |
-| 创建流程接入 API | `CreatePet.tsx` Step 3 是静态页面 | 接入 `/api/v1/generate` + 轮询 `/api/v1/status/{id}` |
-| 3D 预览 | Step 4 是占位图 | 改为 PetCanvas 加载真实 GLB |
+| Tauri sidecar 调用 FastAPI | `tauri-service.ts` 有 `invoke` 抽象 | 新增 `generatePet()` / `pollTaskStatus()` 等命令（含 FastAPI 进程生命周期管理） |
+| 创建流程接入 API | `CreatePet.tsx` Step 3 是静态界面 | 接入 `/api/v1/generate` + 轮询 `/api/v1/status/{id}` |
+| 3D 预览 | Step 4 是占位图 | 改为 PetCanvas 加载真实 GLB（在 Tauri WebView 中渲染） |
 | 宠物列表对接 | `petStore.ts` 用 localStorage | 对接 `/api/v1/pets` + `/api/v1/model/{id}` |
 
 ---
@@ -199,8 +199,8 @@ DashScope/Tripo 输出的 mesh 大概率 **不带骨骼绑定**。
 | **Day 1** | ✅ 云端后端选型完成 | DashScope 确认可用 | 后端 |
 | **Day 1** | ✅ DashScope E2E 全管线 + 健康检查 | 测试通过 | 后端 |
 | **Day 2** | 真实猫照片 DashScope 还原度验证 | 还原度评分表 | 后端 |
-| **Day 2** | Three.js 加载 DashScope GLB + 骨骼绑定验证 | 加载结果 + Mixamo 测试 | 前端 + 后端 |
-| **Day 3** | 前端对接真实 API | 创建→生成→预览完整链路 | 前端 |
+| **Day 2** | Tauri WebView 加载 DashScope GLB + 骨骼绑定验证 | 加载结果 + Mixamo 测试 | 前端 + 后端 |
+| **Day 3** | 前端对接真实 API（Tauri 环境下） | 创建→生成→预览完整链路 | 前端 |
 | **Day 4** | 汇总报告 + 集成方案 + Go/No-Go 评审 | 完整验证报告 | 全体 |
 
 ---

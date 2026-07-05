@@ -5,8 +5,7 @@ export type Route =
   | { page: 'welcome' }
   | { page: 'create-pet'; step?: number }
   | { page: 'desktop' }
-  | { page: 'settings'; tab?: string }
-  | { page: 'three-demo' };
+  | { page: 'settings'; tab?: string };
 
 interface RouterState {
   current: Route;

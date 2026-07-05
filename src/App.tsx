@@ -9,7 +9,6 @@ const Welcome = lazy(() => import('@/pages/Welcome'));
 const CreatePet = lazy(() => import('@/pages/CreatePet'));
 const Desktop = lazy(() => import('@/pages/Desktop'));
 const Settings = lazy(() => import('@/pages/Settings'));
-const ThreeDemo = lazy(() => import('@/pages/ThreeDemo'));
 
 function PageLoader() {
   return (
@@ -46,7 +45,6 @@ export default function App() {
         {currentRoute.page === 'create-pet' && <CreatePet />}
         {currentRoute.page === 'desktop' && <Desktop />}
         {currentRoute.page === 'settings' && <Settings />}
-        {currentRoute.page === 'three-demo' && <ThreeDemo />}
       </Suspense>
       <ToastContainer />
     </div>

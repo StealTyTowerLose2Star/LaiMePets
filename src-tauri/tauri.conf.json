@@ -35,6 +35,13 @@
   },
   "bundle": {
     "active": true,
+    "targets": ["msi", "nsis"],
+    "publisher": "LaiMePet Team",
+    "copyright": "Copyright © 2026 LaiMePet Team",
+    "category": "Lifestyle",
+    "shortDescription": "AI-powered desktop pet companion for Windows.",
+    "longDescription": "LaiMePet turns real pet photos into a 3D desktop companion that lives on your Windows desktop.",
+    "useLocalToolsDir": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,23 +49,27 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "targets": ["msi", "nsis"],
     "windows": {
-      "wix": {},
+      "allowDowngrades": false,
+      "minimumWebview2Version": "109.0.1518.78",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "upgradeCode": "4d996251-af37-4328-8038-f6ac93981fc0",
+        "language": ["zh-CN", "en-US"]
+      },
       "nsis": {
-        "installMode": "currentUser"
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false,
+        "compression": "lzma",
+        "startMenuFolder": "LaiMePet"
       }
     }
   },
-  "plugins": {
-    "fs": {
-      "scope": {
-        "allow": [
-          "$APPDATA/**",
-          "$APPDATA/LaiMePet/**"
-        ],
-        "deny": []
-      }
-    }
-  }
+  "plugins": {}
 }

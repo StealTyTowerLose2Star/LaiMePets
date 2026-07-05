@@ -6,19 +6,22 @@
 
 ```
 docs/pm/
-├── README.md          ← 本文件（版本索引）
-├── v1.0/              ← 当前版本
-│   └── prd-deskpet.md ← DeskPet 桌面宠物 PRD
-├── v1.1/              ← 下一版本（待创建）
-└── ...
+├── README.md                        ← 本文件（版本索引）
+├── v1.0/                            ← v1.0 归档
+│   ├── prd-deskpet.md               ← LaiMePet V1.0 PRD（初稿）
+│   └── ai-feasibility-plan.md       ← AI 形象生成技术可行性验证计划
+├── v1.1/                            ← 当前版本
+│   └── prd-deskpet.md               ← LaiMePet V1.1 PRD（桌面原生应用）
+└── v2.0/                            ← 下一大版本（待创建）
 ```
 
 ## 版本历史
 
 | 版本 | 日期 | 文档 | 状态 | 变更说明 |
 |------|------|------|------|---------|
-| v1.0 | 2026-06-30 | [prd-deskpet.md](v1.0/prd-deskpet.md) | 初稿 | DeskPet 桌面宠物 V1.0 PRD，包含形象生成、桌面展示、互动模块 |
-| v1.0 | 2026-07-02 | [ai-feasibility-plan.md](v1.0/ai-feasibility-plan.md) | 执行中 | AI 形象生成技术可行性验证计划，Sprint 2 前置条件 |
+| v1.0 | 2026-06-30 | [prd-deskpet.md](v1.0/prd-deskpet.md) | 已归档 | LaiMePet 桌面宠物 V1.0 PRD，包含形象生成、桌面展示、互动模块 |
+| v1.0 | 2026-07-02 | [ai-feasibility-plan.md](v1.0/ai-feasibility-plan.md) | 执行中 | AI 形象生成技术可行性验证计划 |
+| v1.1 | 2026-07-04 | [prd-deskpet.md](v1.1/prd-deskpet.md) | ✅ 已确认 | 产品方向修正：Web 页面 → 桌面原生应用；新增跨平台路线图；新增安装/分发说明 |
 
 ## 版本规则
 

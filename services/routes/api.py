@@ -180,14 +180,17 @@ async def get_model_thumbnail(pet_id: str):
 async def list_generated_pets():
     """列出所有已生成的宠物"""
     pets = await list_pets()
-    return [
-        PetModelInfo(
+    result = []
+    for p in pets:
+        created_at = p.get("created_at", "")
+        if not created_at:
+            continue  # 跳过不完整的记录（无 meta.json）
+        result.append(PetModelInfo(
             pet_id=p["pet_id"],
             pet_name=p["pet_name"],
             model_size_bytes=p["model_size_bytes"],
             thumbnail_url=f"/api/v1/model/{p['pet_id']}/thumbnail",
             model_url=f"/api/v1/model/{p['pet_id']}",
-            created_at=p["created_at"],
-        )
-        for p in pets
-    ]
+            created_at=created_at,
+        ))
+    return result

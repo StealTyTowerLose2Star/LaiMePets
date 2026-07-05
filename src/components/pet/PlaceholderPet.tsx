@@ -2,26 +2,38 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh, Group } from 'three';
 import type { PetBehavior } from '@/types';
+import { computeRealismConfig } from './shaders/toon';
 
 interface PlaceholderPetProps {
   behavior?: PetBehavior;
-  realism?: number; // 0-100, 影响模型复杂度（后续对接 AI 模型时使用）
+  realism?: number; // 0-100, 影响材质和形状细节
 }
 
 /**
- * 占位宠物模型 — 用基础几何体构建一只可爱的小猫
+ * 占位宠物模型 — 用基础几何体构建一只可爱的小猫。
  *
- * 后续 Sprint 2 会替换为 AI 生成的 3D 模型（GLB/GLTF）
- * 此组件用于验证 Three.js 渲染管线（光照/阴影/动画/交互）
+ * 当真实 GLB 模型不可用时显示，具有程序化呼吸/尾巴/头部动画。
+ * 根据 realism 参数调整材质外观（toon / PBR）。
  */
 export function PlaceholderPet({
   behavior = 'idle',
+  realism = 50,
 }: PlaceholderPetProps) {
   const groupRef = useRef<Group>(null);
   const tailRef = useRef<Mesh>(null);
   const headRef = useRef<Group>(null);
   const leftEarRef = useRef<Mesh>(null);
   const rightEarRef = useRef<Mesh>(null);
+
+  // 根据写实度决定材质配置
+  const config = computeRealismConfig(realism);
+  const isToon = config.tier === 'toon';
+  const toonRoughness = 0.05;
+  const pbrRoughness = 0.5;
+
+  // 材质参数
+  const bodyColor = '#f5a623';
+  const bodyDarkColor = '#e8951a';
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
@@ -33,9 +45,7 @@ export function PlaceholderPet({
 
     // ── 空闲呼吸动画 ──
     if (behavior === 'idle') {
-      // 身体轻微上下浮动（呼吸）
       group.position.y = Math.sin(t * 1.5) * 0.05;
-      // 尾巴缓慢摇摆
       tail.rotation.z = Math.sin(t * 2) * 0.3;
       tail.rotation.x = Math.sin(t * 1.5) * 0.15;
     }
@@ -49,7 +59,7 @@ export function PlaceholderPet({
     // ── 趴下动画 ──
     if (behavior === 'lying_down') {
       group.position.y = -0.3;
-      group.rotation.x = Math.sin(t * 0.5) * 0.05; // 微弱的呼吸
+      group.rotation.x = Math.sin(t * 0.5) * 0.05;
     }
 
     // ── 伸懒腰 ──
@@ -59,7 +69,36 @@ export function PlaceholderPet({
       group.position.y = stretch * 0.5;
     }
 
-    // ── 头部轻微转动（大部分行为都适用）─
+    // ── 打哈欠 ──
+    if (behavior === 'yawning') {
+      group.position.y = Math.sin(t * 1.5) * 0.08 + 0.05;
+      group.rotation.x = Math.sin(t * 1.5) * 0.15;
+    }
+
+    // ── 舔毛 ──
+    if (behavior === 'licking') {
+      group.rotation.z = Math.sin(t * 3) * 0.1;
+    }
+
+    // ── 追尾巴 ──
+    if (behavior === 'chasing_tail') {
+      group.rotation.y = t * 1.5;
+    }
+
+    // ── 看窗外 ──
+    if (behavior === 'looking_outside') {
+      group.rotation.x = 0.2;
+      group.position.y = 0.05;
+      group.position.z = -0.1;
+    }
+
+    // ── 抓挠 ──
+    if (behavior === 'scratching') {
+      group.position.y = Math.sin(t * 6) * 0.04;
+      group.rotation.z = Math.sin(t * 5) * 0.05;
+    }
+
+    // ── 头部轻微转动（大部分行为都适用）──
     if (head && behavior !== 'lying_down') {
       head.rotation.y = Math.sin(t * 0.8) * 0.15;
       head.rotation.x = Math.sin(t * 0.6) * 0.08;
@@ -79,8 +118,8 @@ export function PlaceholderPet({
       <mesh position={[0, -0.1, 0]} castShadow>
         <capsuleGeometry args={[0.5, 0.6, 8, 16]} />
         <meshStandardMaterial
-          color="#f5a623"
-          roughness={0.6}
+          color={bodyColor}
+          roughness={isToon ? toonRoughness : pbrRoughness}
           metalness={0.05}
         />
       </mesh>
@@ -91,8 +130,8 @@ export function PlaceholderPet({
         <mesh castShadow>
           <sphereGeometry args={[0.38, 24, 24]} />
           <meshStandardMaterial
-            color="#f5a623"
-            roughness={0.5}
+            color={bodyColor}
+            roughness={isToon ? toonRoughness : pbrRoughness - 0.1}
             metalness={0.05}
           />
         </mesh>
@@ -106,8 +145,8 @@ export function PlaceholderPet({
         >
           <coneGeometry args={[0.12, 0.22, 8]} />
           <meshStandardMaterial
-            color="#f5a623"
-            roughness={0.4}
+            color={bodyColor}
+            roughness={isToon ? toonRoughness : pbrRoughness - 0.1}
             metalness={0.05}
           />
         </mesh>
@@ -116,7 +155,7 @@ export function PlaceholderPet({
           <coneGeometry args={[0.07, 0.14, 8]} />
           <meshStandardMaterial
             color="#ffb8c6"
-            roughness={0.3}
+            roughness={toonRoughness}
             metalness={0}
           />
         </mesh>
@@ -130,8 +169,8 @@ export function PlaceholderPet({
         >
           <coneGeometry args={[0.12, 0.22, 8]} />
           <meshStandardMaterial
-            color="#f5a623"
-            roughness={0.4}
+            color={bodyColor}
+            roughness={isToon ? toonRoughness : pbrRoughness - 0.1}
             metalness={0.05}
           />
         </mesh>
@@ -140,7 +179,7 @@ export function PlaceholderPet({
           <coneGeometry args={[0.07, 0.14, 8]} />
           <meshStandardMaterial
             color="#ffb8c6"
-            roughness={0.3}
+            roughness={toonRoughness}
             metalness={0}
           />
         </mesh>
@@ -171,7 +210,7 @@ export function PlaceholderPet({
           <meshStandardMaterial color="#ff9090" roughness={0.2} />
         </mesh>
 
-        {/* 嘴巴 — 简单线条用两个小三角形 */}
+        {/* 嘴巴 */}
         <mesh position={[-0.03, -0.09, 0.35]} rotation={[0, 0, 0.3]}>
           <boxGeometry args={[0.03, 0.015, 0.01]} />
           <meshStandardMaterial color="#8b5a3c" roughness={0.3} />
@@ -191,29 +230,65 @@ export function PlaceholderPet({
       >
         <capsuleGeometry args={[0.06, 0.5, 6, 12]} />
         <meshStandardMaterial
-          color="#e8951a"
-          roughness={0.5}
+          color={bodyDarkColor}
+          roughness={isToon ? toonRoughness : pbrRoughness}
           metalness={0.05}
         />
       </mesh>
 
       {/* ═══ 四条腿 ═══ */}
-      <Leg position={[-0.2, -0.55, 0.15]} />
-      <Leg position={[0.2, -0.55, 0.15]} />
-      <Leg position={[-0.2, -0.55, -0.2]} />
-      <Leg position={[0.2, -0.55, -0.2]} />
+      <Leg
+        position={[-0.2, -0.55, 0.15]}
+        isToon={isToon}
+        toonR={toonRoughness}
+        pbrR={pbrRoughness}
+        color={bodyDarkColor}
+      />
+      <Leg
+        position={[0.2, -0.55, 0.15]}
+        isToon={isToon}
+        toonR={toonRoughness}
+        pbrR={pbrRoughness}
+        color={bodyDarkColor}
+      />
+      <Leg
+        position={[-0.2, -0.55, -0.2]}
+        isToon={isToon}
+        toonR={toonRoughness}
+        pbrR={pbrRoughness}
+        color={bodyDarkColor}
+      />
+      <Leg
+        position={[0.2, -0.55, -0.2]}
+        isToon={isToon}
+        toonR={toonRoughness}
+        pbrR={pbrRoughness}
+        color={bodyDarkColor}
+      />
     </group>
   );
 }
 
 /** 腿组件 */
-function Leg({ position }: { position: [number, number, number] }) {
+function Leg({
+  position,
+  isToon,
+  toonR,
+  pbrR,
+  color,
+}: {
+  position: [number, number, number];
+  isToon: boolean;
+  toonR: number;
+  pbrR: number;
+  color: string;
+}) {
   return (
     <mesh position={position} castShadow>
       <capsuleGeometry args={[0.08, 0.3, 6, 8]} />
       <meshStandardMaterial
-        color="#e8951a"
-        roughness={0.6}
+        color={color}
+        roughness={isToon ? toonR : pbrR}
         metalness={0.05}
       />
     </mesh>

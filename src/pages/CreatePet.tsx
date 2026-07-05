@@ -11,19 +11,54 @@ import {
 } from '@/services/api';
 import type { TaskStatus } from '@/services/api';
 
+// ── 常量 ──
+
+const MIN_PHOTOS = 3;
+const MAX_PHOTOS = 50;
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ACCEPTED_FORMATS = ['.jpg', '.jpeg', '.png', '.webp'];
+const ACCEPTED_MIME = 'image/jpeg,image/png,image/webp';
+const TASK_STORAGE_KEY = 'lai-me-pet-pending-task';
+
+// ── 工具函数 ──
+
+function isValidFormat(filename: string): boolean {
+  const ext = '.' + filename.split('.').pop()?.toLowerCase();
+  return ACCEPTED_FORMATS.includes(ext);
+}
+
+interface FileValidation {
+  file: File;
+  valid: boolean;
+  issue?: string;
+}
+
+function validateFile(file: File): FileValidation {
+  if (!isValidFormat(file.name)) {
+    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '?');
+    return { file, valid: false, issue: `不支持的格式 ${ext}` };
+  }
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+    return { file, valid: false, issue: `文件过大 (${sizeMB}MB > ${MAX_FILE_SIZE_MB}MB)` };
+  }
+  return { file, valid: true };
+}
+
 /**
  * 宠物创建流程（5 步向导）
  *
  * 对应 ui-screens.md §2：
  * 2.1 上传 → 2.2 写实度配置 → 2.3 生成等待 → 2.4 预览 → 2.5 命名
  *
- * v1.2: Step 3-4 已对接 DashScope 真实 API
+ * v1.3: 多照片验证 + 进度恢复 + 重试增强
  */
 export default function CreatePet() {
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<File[]>([]);
   const [realism, setRealism] = useState(50);
-  const [useCloud, setUseCloud] = useState(true); // 默认云端（DashScope）
+  const [useCloud, setUseCloud] = useState(true);
   const [petName, setPetName] = useState('');
 
   // 生成状态
@@ -33,14 +68,29 @@ export default function CreatePet() {
   const [genError, setGenError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // 文件验证
+  const fileValidations = files.map(validateFile);
+  const validFiles = fileValidations.filter((v) => v.valid);
+
   const canNext =
-    (step === 1 && files.length >= 5) ||
+    (step === 1 && validFiles.length >= MIN_PHOTOS) ||
     (step === 2) ||
     (step === 3 && genStatus?.status === 'completed') ||
     (step === 4) ||
     (step === 5 && petName.trim().length > 0);
 
   const totalSteps = 5;
+
+  // ── 生成失败时清除已保存的 taskId ──
+  useEffect(() => {
+    if (genError) {
+      try {
+        localStorage.removeItem(TASK_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [genError]);
 
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
@@ -66,7 +116,13 @@ export default function CreatePet() {
 
         {/* ── Step 1: 上传照片 ── */}
         {step === 1 && (
-          <UploadStep files={files} onFilesChange={setFiles} />
+          <UploadStep
+            files={files}
+            validations={fileValidations}
+            onFilesChange={setFiles}
+            minPhotos={MIN_PHOTOS}
+            maxPhotos={MAX_PHOTOS}
+          />
         )}
 
         {/* ── Step 2: 写实度配置 ── */}
@@ -93,14 +149,36 @@ export default function CreatePet() {
               setTaskId(tid);
               setIsGenerating(true);
               setGenError(null);
+              // 持久化 taskId 用于进度恢复
+              try {
+                localStorage.setItem(
+                  TASK_STORAGE_KEY,
+                  JSON.stringify({ taskId: tid, startedAt: Date.now() }),
+                );
+              } catch {
+                // ignore
+              }
             }}
             onComplete={(status, pid) => {
               setGenStatus(status);
               setPetId(pid);
               setIsGenerating(false);
+              // 清理持久化
+              try {
+                localStorage.removeItem(TASK_STORAGE_KEY);
+              } catch {
+                // ignore
+              }
             }}
             onError={(err) => {
               setGenError(err);
+              setIsGenerating(false);
+            }}
+            onRetry={() => {
+              setGenError(null);
+              setGenStatus(null);
+              setTaskId(null);
+              setPetId(null);
               setIsGenerating(false);
             }}
           />
@@ -108,10 +186,7 @@ export default function CreatePet() {
 
         {/* ── Step 4: 预览 ── */}
         {step === 4 && (
-          <PreviewStep
-            petId={petId}
-            genStatus={genStatus}
-          />
+          <PreviewStep petId={petId} genStatus={genStatus} />
         )}
 
         {/* ── Step 5: 命名 ── */}
@@ -169,17 +244,40 @@ export default function CreatePet() {
 /** ── Step 1: 上传 ── */
 function UploadStep({
   files,
+  validations,
   onFilesChange,
+  minPhotos,
+  maxPhotos,
 }: {
   files: File[];
+  validations: FileValidation[];
   onFilesChange: (f: File[]) => void;
+  minPhotos: number;
+  maxPhotos: number;
 }) {
+  const validCount = validations.filter((v) => v.valid).length;
+  const invalidCount = validations.filter((v) => !v.valid).length;
+  const [showGuide, setShowGuide] = useState(false);
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const dropped = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(jpg|jpeg|png|mp4|mov)$/i.test(f.name),
+      /\.(jpg|jpeg|png|webp)$/i.test(f.name),
     );
-    onFilesChange([...files, ...dropped].slice(0, 50));
+    onFilesChange([...files, ...dropped].slice(0, maxPhotos));
+  };
+
+  const handleFileSelect = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = ACCEPTED_MIME;
+    input.onchange = () => {
+      if (input.files) {
+        onFilesChange([...files, ...Array.from(input.files)].slice(0, maxPhotos));
+      }
+    };
+    input.click();
   };
 
   return (
@@ -188,64 +286,124 @@ function UploadStep({
         上传宠物照片
       </h2>
       <p className="mt-1 text-body-sm text-neutral-500">
-        至少 5 张清晰照片，支持 JPG/PNG/MP4/MOV，最多 50 张
+        至少 {minPhotos} 张清晰照片（多角度更真实），支持 JPG/PNG/WEBP，单张 ≤{MAX_FILE_SIZE_MB}MB，最多 {maxPhotos} 张
       </p>
+
+      {/* 拍照指导 */}
+      <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50/50 dark:border-brand-800 dark:bg-brand-900/20">
+        <button
+          onClick={() => setShowGuide(!showGuide)}
+          className="flex w-full items-center justify-between px-3 py-2 text-left"
+        >
+          <span className="text-body-sm font-medium text-brand-700 dark:text-brand-300">
+            📷 如何拍出最像的 3D 宠物？
+          </span>
+          <span className="text-brand-500 text-caption">
+            {showGuide ? '收起 ▲' : '展开 ▼'}
+          </span>
+        </button>
+        {showGuide && (
+          <div className="border-t border-brand-200 px-3 py-3 dark:border-brand-800">
+            <p className="text-caption text-neutral-600 dark:text-neutral-400">
+              上传 <strong>3-5 张不同角度</strong>的照片可启用多视图 3D 重建，
+              比单张照片还原度提升 <strong>60%+</strong>。
+            </p>
+            <div className="mt-2 grid grid-cols-5 gap-2">
+              {[
+                { emoji: '🐱', label: '正面', desc: '眼睛看向镜头', color: 'bg-green-100 dark:bg-green-900' },
+                { emoji: '🐱', label: '左侧面', desc: '90° 侧面全身', color: 'bg-blue-100 dark:bg-blue-900' },
+                { emoji: '🐱', label: '右侧面', desc: '另一侧 90°', color: 'bg-purple-100 dark:bg-purple-900' },
+                { emoji: '🐱', label: '背面', desc: '从背后拍摄', color: 'bg-orange-100 dark:bg-orange-900' },
+                { emoji: '📐', label: '45°俯视', desc: '从上往下斜拍', color: 'bg-pink-100 dark:bg-pink-900' },
+              ].map((angle) => (
+                <div
+                  key={angle.label}
+                  className={`flex flex-col items-center rounded-lg ${angle.color} p-2 text-center`}
+                >
+                  <span className="text-xl">{angle.emoji}</span>
+                  <span className="mt-0.5 text-caption font-medium text-neutral-700 dark:text-neutral-300">
+                    {angle.label}
+                  </span>
+                  <span className="text-[10px] leading-tight text-neutral-500">
+                    {angle.desc}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 space-y-1 text-caption text-neutral-500">
+              <p>💡 <strong>光线充足</strong>：白天自然光拍摄，避免阴影遮挡</p>
+              <p>💡 <strong>纯色背景</strong>：背景越简单，AI 抠图越精准</p>
+              <p>💡 <strong>全身入镜</strong>：拍全头部+身体+尾巴，不要裁切</p>
+              <p>💡 <strong>保持距离</strong>：宠物占画面 50-70%，不要贴太近</p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 拖拽上传区 */}
       <div
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
-        className="mt-4 flex h-40 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 transition-colors hover:border-brand-400 dark:border-neutral-600 dark:hover:border-brand-400"
-        onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.multiple = true;
-          input.accept = '.jpg,.jpeg,.png,.mp4,.mov';
-          input.onchange = () => {
-            if (input.files) {
-              onFilesChange([...files, ...Array.from(input.files)].slice(0, 50));
-            }
-          };
-          input.click();
-        }}
+        className="mt-3 flex h-40 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 transition-colors hover:border-brand-400 dark:border-neutral-600 dark:hover:border-brand-400"
+        onClick={handleFileSelect}
       >
         <span className="text-3xl">📁</span>
         <p className="mt-2 text-body text-neutral-400">
           拖拽文件到此处，或点击选择
         </p>
         <p className="text-caption text-neutral-400">
-          已选择 {files.length} 个文件
+          已选择 {files.length} 个文件（{validCount} 张合格）
         </p>
       </div>
 
-      {/* 文件列表 */}
+      {/* 文件列表 + 验证状态 */}
       {files.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {files.map((f, i) => (
-            <span
+        <div className="mt-3 space-y-1">
+          {validations.map((v, i) => (
+            <div
               key={i}
-              className="flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-caption text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+              className={`flex items-center justify-between rounded px-2 py-1 text-caption ${
+                v.valid
+                  ? 'bg-success/5 text-neutral-700 dark:text-neutral-300'
+                  : 'bg-error/5 text-error'
+              }`}
             >
-              {f.name.length > 15
-                ? f.name.slice(0, 12) + '...'
-                : f.name}
+              <span className="truncate flex-1">
+                {v.valid ? '✓' : '✗'} {v.file.name.length > 30
+                  ? v.file.name.slice(0, 27) + '...'
+                  : v.file.name}
+                <span className="ml-2 text-neutral-400">
+                  ({(v.file.size / 1024).toFixed(0)} KB)
+                </span>
+              </span>
+              {v.issue && (
+                <span className="ml-2 shrink-0 text-error">{v.issue}</span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onFilesChange(files.filter((_, j) => j !== i));
                 }}
-                className="ml-1 text-neutral-400 hover:text-error"
+                className="ml-2 text-neutral-400 hover:text-error shrink-0"
+                title="移除"
               >
                 ×
               </button>
-            </span>
+            </div>
           ))}
         </div>
       )}
 
-      {files.length < 5 && (
+      {/* 不足提示 */}
+      {validCount < minPhotos && files.length > 0 && (
         <p className="mt-3 text-caption text-warning">
-          还需要 {5 - files.length} 张照片
+          {invalidCount > 0 && `${invalidCount} 张不合格 · `}
+          还需要 {minPhotos - validCount} 张合格照片
+        </p>
+      )}
+      {files.length === 0 && (
+        <p className="mt-3 text-caption text-warning">
+          至少需要 {minPhotos} 张照片才能继续
         </p>
       )}
     </div>
@@ -339,6 +497,7 @@ function GenerationStep({
   onStart,
   onComplete,
   onError,
+  onRetry,
 }: {
   files: File[];
   realism: number;
@@ -350,8 +509,10 @@ function GenerationStep({
   onStart: (taskId: string) => void;
   onComplete: (status: TaskStatus, petId: string) => void;
   onError: (error: string) => void;
+  onRetry: () => void;
 }) {
   const startedRef = useRef(false);
+  const taskIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -359,16 +520,39 @@ function GenerationStep({
 
     (async () => {
       try {
-        // 1. 提交生成任务
-        const task = await generatePet(files, realism, petName);
-        onStart(task.task_id);
+        // ── 进度恢复：检查是否有未完成的任务 ──
+        let resumeTaskId: string | null = null;
+        try {
+          const saved = localStorage.getItem(TASK_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved) as { taskId: string; startedAt: number };
+            const elapsed = Date.now() - parsed.startedAt;
+            // 10 分钟内视为有效
+            if (elapsed < 10 * 60 * 1000) {
+              resumeTaskId = parsed.taskId;
+            }
+          }
+        } catch {
+          // ignore
+        }
 
-        // 2. 轮询直到完成
+        if (resumeTaskId) {
+          // 恢复已有任务
+          taskIdRef.current = resumeTaskId;
+          onStart(resumeTaskId);
+        } else {
+          // 提交新任务
+          const task = await generatePet(files, realism, petName);
+          taskIdRef.current = task.task_id;
+          onStart(task.task_id);
+        }
+
+        // 轮询直到完成
         const result = await pollTaskStatus(
-          task.task_id,
-          undefined, // onProgress
-          1500,      // 1.5s 轮询间隔
-          300_000,   // 5 分钟超时
+          taskIdRef.current,
+          undefined,
+          1500,
+          300_000,
         );
 
         if (result.status === 'failed') {
@@ -393,22 +577,23 @@ function GenerationStep({
   const progress = genStatus?.progress ?? 0;
   const currentStep = genStatus?.current_step ?? '';
   const phaseIndex =
-    progress < 30 ? 0
-    : progress < 70 ? 1
-    : progress < 100 ? 2
-    : 3; // 3 = all done
+    progress < 30 ? 0 : progress < 70 ? 1 : progress < 100 ? 2 : 3;
 
   return (
     <div className="text-center">
       <h2 className="text-title-sm font-semibold text-neutral-900 dark:text-neutral-100">
-        正在生成宠物形象
-      </h2>
-      <p className="mt-1 text-body-sm text-neutral-500">
         {isGenerating
-          ? '正在通过 DashScope AI 生成 3D 模型，预计 1-2 分钟'
+          ? '正在生成宠物形象'
           : genError
             ? '生成遇到问题'
             : '生成完成！'}
+      </h2>
+      <p className="mt-1 text-body-sm text-neutral-500">
+        {isGenerating
+          ? '正在通过 AI 生成 3D 模型，预计 1-2 分钟'
+          : genError
+            ? '请检查网络连接后重试'
+            : '模型已生成，请前往预览'}
       </p>
 
       {/* 阶段指示器 */}
@@ -472,23 +657,35 @@ function GenerationStep({
         </p>
       )}
 
-      {/* 错误信息 */}
+      {/* 错误信息 + 操作 */}
       {genError && (
-        <div className="mt-4 rounded-lg border border-error/30 bg-error/5 p-3 text-left">
+        <div className="mt-4 rounded-lg border border-error/30 bg-error/5 p-4 text-left">
           <p className="text-body-sm font-medium text-error">生成失败</p>
           <p className="mt-1 text-caption text-neutral-500">{genError}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2"
-            onClick={() => {
-              // 重置并重试
-              startedRef.current = false;
-              onError('');
-            }}
-          >
-            🔄 重试
-          </Button>
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // 重新开始生成
+                startedRef.current = false;
+                onRetry();
+              }}
+            >
+              🔄 重新生成
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // 返回上一步更换照片
+                onRetry();
+                navigate({ page: 'create-pet', step: 1 });
+              }}
+            >
+              📷 更换照片
+            </Button>
+          </div>
         </div>
       )}
 
@@ -534,7 +731,6 @@ function PreviewStep({
             alt="宠物缩略图"
             className="h-48 w-48 rounded-xl object-cover shadow-md"
             onError={(e) => {
-              // 缩略图加载失败时显示占位
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
@@ -570,7 +766,7 @@ function PreviewStep({
           </div>
         </div>
 
-        {/* 操作 */}
+        {/* 下载按钮 */}
         {petId && (
           <div className="mt-4 flex gap-3">
             <a

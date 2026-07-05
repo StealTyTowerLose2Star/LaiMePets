@@ -43,7 +43,7 @@
 | Token | 色值 | 用途 |
 |-------|------|------|
 | `--color-neutral-0` | `#FFFFFF` | 纯白底（卡片内容区） |
-| `--color-neutral-50` | `#FAFAF9` | 默认页面背景 |
+| `--color-neutral-50` | `#FAFAF9` | 默认窗口背景 |
 | `--color-neutral-100` | `#F5F0ED` | 次级背景、分组底色 |
 | `--color-neutral-200` | `#E8E0DB` | 分隔线、禁用态底色 |
 | `--color-neutral-300` | `#D4CBC4` | 边框 |
@@ -58,7 +58,7 @@
 
 | Token | 色值 | 用途 |
 |-------|------|------|
-| `--color-neutral-0` | `#1E1B19` | 暗色页面背景（对应亮色白） |
+| `--color-neutral-0` | `#1E1B19` | 暗色窗口背景 |
 | `--color-neutral-50` | `#2A2522` | 默认暗色背景 |
 | `--color-neutral-100` | `#38322E` | 次级暗色背景 |
 | `--color-neutral-200` | `#4A433E` | 分隔线、禁用态底色 |
@@ -116,12 +116,12 @@
 
 ### 2.2 字号层级
 
-> 基准：浏览器默认 16px。所有字号基于 4px 递增。
+> 基准：系统 WebView 默认 16px。所有字号基于 4px 递增。
 
 | Token | 字号 | 行高 | 字重 | 用途 |
 |-------|------|------|------|------|
 | `--text-display` | 32px | 40px (1.25) | Semibold 600 | 启动页标题、大时刻 |
-| `--text-h1` | 24px | 32px (1.33) | Semibold 600 | 页面标题 |
+| `--text-h1` | 24px | 32px (1.33) | Semibold 600 | 窗口标题 |
 | `--text-h2` | 20px | 28px (1.4) | Semibold 600 | 区块标题 |
 | `--text-h3` | 16px | 24px (1.5) | Semibold 600 | 小标题 |
 | `--text-body-l` | 15px | 22px (1.47) | Regular 400 | 长文、说明 |
@@ -153,8 +153,8 @@
 | `--space-sm` | 8px | 相关元素间距（按钮组、表单行内间距）|
 | `--space-md` | 16px | **默认间距**（卡片内边距、区块内间距）|
 | `--space-lg` | 24px | 区块间距、弹窗内边距 |
-| `--space-xl` | 32px | 页面级间距、大区块分隔 |
-| `--space-2xl` | 48px | 页面上下留白、主区块间距 |
+| `--space-xl` | 32px | 界面级间距、大区块分隔 |
+| `--space-2xl` | 48px | 界面上下留白、主区块间距 |
 | `--space-3xl` | 64px | 极少使用（启动页、引导页）|
 
 ### 3.1 应用规则
@@ -482,7 +482,7 @@
 --ease-bounce              → 弹性缓动
 ```
 
-> 前端实现时映射为 CSS Custom Properties，定义在 `:root` 和 `[data-theme="dark"]` 下，由 JS 读取系统主题自动切换。
+> Tauri WebView 渲染时映射为 CSS Custom Properties，定义在 `:root` 和 `[data-theme="dark"]` 下，由 JS 读取系统主题自动切换。
 
 ---
 
