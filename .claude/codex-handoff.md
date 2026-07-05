@@ -70,3 +70,29 @@
 
 **Follow-ups / Risks**
 - 后续 Codex 任务完成时继续追加 .claude/codex-handoff.md
+
+## 2026-07-05 16:31:48 +08:00
+
+**Summary**
+当前 Sprint 2.1 打包工作已完成并提交。已完成三个提交：3e76382 配置 Tauri MSI/NSIS 打包与品牌素材；19589a6 新增 Codex 到 Claude Code 的交接日志机制；0b517e7 提交剩余工作区更新，包括 Claude 本地设置、tsbuildinfo 和后端测试图片/分割样例。
+
+**Changed Files**
+- src-tauri/tauri.conf.json
+- src-tauri/wix/*
+- AGENTS.md
+- .claude/codex-handoff.md
+- scripts/report-to-claude-code.ps1
+- .claude/settings.local.json
+- services/tests/Geigei*.jpg
+- services/tests/segmented/*
+- tsconfig*.tsbuildinfo
+
+**Verification**
+- Tauri build 此前已成功生成 zh-CN/en-US MSI 与 NSIS setup.exe
+- git commit 已完成：3e76382、19589a6、0b517e7
+- 当前交接机制可成功追加 Claude Code handoff 记录
+
+**Follow-ups / Risks**
+- 建议 Claude Code/PjM 下一步更新 Sprint 2.1 状态：Windows 安装包打包链路已跑通
+- 建议后续确认是否保留 tsconfig*.tsbuildinfo 和 .claude/settings.local.json 在版本库中
+- 下一阶段可进入安装包冒烟测试：干净 Windows 环境安装、卸载、WebView2 检查、启动 sidecar 验证
