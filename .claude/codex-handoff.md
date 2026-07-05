@@ -96,3 +96,19 @@
 - 建议 Claude Code/PjM 下一步更新 Sprint 2.1 状态：Windows 安装包打包链路已跑通
 - 建议后续确认是否保留 tsconfig*.tsbuildinfo 和 .claude/settings.local.json 在版本库中
 - 下一阶段可进入安装包冒烟测试：干净 Windows 环境安装、卸载、WebView2 检查、启动 sidecar 验证
+
+## 2026-07-05 16:35:18 +08:00
+
+**Summary**
+已按用户授权为 C:\Users\27365\.config\git\ignore 添加读取权限。普通沙箱下 git status 仍提示 Permission denied，但提升权限运行 git status 已无该用户级 ignore 警告，判断剩余提示来自 Codex 沙箱对 workspace 外路径的读取限制。
+
+**Changed Files**
+- .claude/codex-handoff.md
+
+**Verification**
+- icacls C:\Users\27365\.config\git\ignore /grant 27365:R 成功
+- 提升权限 git status --short 无 C:\Users\27365\.config\git\ignore 警告
+
+**Follow-ups / Risks**
+- 普通沙箱 git status 仍可能显示该警告；需要完全消除只能在提升权限下运行 git 或调整 Codex 沙箱范围
+- services/.pytest_cache 仍有目录访问警告，建议后续删除该 pytest 缓存目录或修复其 ACL
