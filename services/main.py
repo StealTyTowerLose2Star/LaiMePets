@@ -82,8 +82,12 @@ async def root():
 # ── 直接启动 ──
 if __name__ == "__main__":
     import uvicorn
+
+    # 直接传递 app 对象而非字符串 "main:app"。
+    # PyInstaller 冻结环境中不存在名为 "main" 的模块
+    # （入口脚本被冻结为 __main__），必须避免 uvicorn 通过 import 加载。
     uvicorn.run(
-        "main:app",
+        app,
         host=settings.host,
         port=settings.port,
         reload=settings.debug,

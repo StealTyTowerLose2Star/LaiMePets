@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+from shutil import copy2
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
@@ -11,7 +12,9 @@ service_dir = Path(SPECPATH).resolve()
 repo_root = service_dir.parent
 tauri_binaries_dir = repo_root / "src-tauri" / "binaries"
 pyinstaller_work_dir = service_dir / "build" / "pyinstaller"
-sidecar_name = "laimepet-ai-sidecar-x86_64-pc-windows-gnu"
+sidecar_stem = "laimepet-ai-sidecar"
+sidecar_name = f"{sidecar_stem}-x86_64-pc-windows-gnu"
+msvc_sidecar_name = f"{sidecar_stem}-x86_64-pc-windows-msvc.exe"
 tauri_binaries_dir.mkdir(parents=True, exist_ok=True)
 pyinstaller_work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,3 +143,8 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+gnu_sidecar_path = tauri_binaries_dir / f"{sidecar_name}.exe"
+msvc_sidecar_path = tauri_binaries_dir / msvc_sidecar_name
+if gnu_sidecar_path.exists():
+    copy2(gnu_sidecar_path, msvc_sidecar_path)

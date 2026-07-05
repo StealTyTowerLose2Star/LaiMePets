@@ -206,3 +206,26 @@ PyInstaller sidecar 打包配置完成，构建因 PyInstaller 无法安装而�
 **Follow-ups / Risks**
 - public/models/geigei01-dcef6fdb.glb 当前无代码引用，未纳入本次提交，建议确认是否作为演示模型保留
 - 如需发布安装包，下一步运行完整 npm run tauri -- build 并做 MSI/NSIS 安装冒烟测试
+
+## 2026-07-05 23:18:15 +08:00
+
+**Summary**
+中断后恢复并完成 sidecar 打包闭环：补齐 Tauri bundler 需要的 MSVC 后缀 sidecar exe，spec 后续会自动从 GNU exe 复制出 MSVC 名称；PyInstaller 入口改为 uvicorn.run(app)；Rust sidecar 查找显式支持 GNU/MSVC 后缀并保留 watchdog 改动。完整 MSI/NSIS 打包已通过。
+
+**Changed Files**
+- services/laimepet-ai-sidecar.spec
+- services/main.py
+- src-tauri/src/lib.rs
+- src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe
+- src-tauri/binaries/laimepet-ai-sidecar-x86_64-pc-windows-msvc.exe
+- .claude/codex-handoff.md
+
+**Verification**
+- GNU 与 MSVC 后缀 sidecar exe /api/v1/health 均返回 200
+- cargo check 通过
+- 提升权限 npm run tauri -- build 成功生成 zh-CN/en-US MSI 与 NSIS setup.exe
+- Vite 构建仍有既有 Desktop chunk >500k 警告
+
+**Follow-ups / Risks**
+- CLAUDE.md 的自动 compact 说明和 public/models/geigei01-dcef6fdb.glb 仍未提交，需用户确认是否纳入
+- 下一步可做安装包冒烟测试：安装、启动、sidecar 进程与健康检查、卸载

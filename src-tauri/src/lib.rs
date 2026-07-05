@@ -10,7 +10,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -23,11 +24,15 @@ use tauri::window::Effect;
 /// 使用 Mutex 保证线程安全（Tauri 命令可能从不同线程调用）。
 pub struct SidecarProcess {
     child: Mutex<Option<Child>>,
+    shutdown: AtomicBool,
 }
 
 impl SidecarProcess {
     pub fn new() -> Self {
-        Self { child: Mutex::new(None) }
+        Self {
+            child: Mutex::new(None),
+            shutdown: AtomicBool::new(false),
+        }
     }
 
     /// 设置子进程句柄
@@ -35,6 +40,11 @@ impl SidecarProcess {
         if let Ok(mut guard) = self.child.lock() {
             *guard = Some(child);
         }
+    }
+
+    /// 标记为正在关闭，watchdog 不应重启
+    pub fn signal_shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
     }
 
     /// 检查子进程是否存活（通过 PID + TCP 端口双验证）
@@ -49,6 +59,7 @@ impl SidecarProcess {
 
 impl Drop for SidecarProcess {
     fn drop(&mut self) {
+        self.signal_shutdown();
         if let Ok(mut guard) = self.child.lock() {
             if let Some(ref mut child) = *guard {
                 println!("[LaiMePet] 正在关闭 Python sidecar (PID {})...", child.id());
@@ -113,7 +124,9 @@ fn find_bundled_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
 
     let candidates = [
         resource_dir.join("laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe"),
+        resource_dir.join("laimepet-ai-sidecar-x86_64-pc-windows-msvc.exe"),
         resource_dir.join("binaries").join("laimepet-ai-sidecar-x86_64-pc-windows-gnu.exe"),
+        resource_dir.join("binaries").join("laimepet-ai-sidecar-x86_64-pc-windows-msvc.exe"),
         resource_dir.join("laimepet-ai-sidecar.exe"),
         resource_dir.join("binaries").join("laimepet-ai-sidecar.exe"),
     ];
@@ -139,8 +152,21 @@ fn find_bundled_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
     None
 }
 
+/// 检查端口是否已被占用（仅用于日志输出，不阻塞启动）
+fn check_port_available() -> bool {
+    TcpStream::connect_timeout(
+        &"127.0.0.1:8000".parse().unwrap(),
+        Duration::from_millis(200),
+    ).is_err() // 连不上 = 端口空闲
+}
+
 /// 尝试启动 sidecar。Release 打包后优先使用 PyInstaller exe，开发环境回退到 Python 源码入口。
 fn try_spawn_sidecar(app: Option<&tauri::AppHandle>) -> Option<Child> {
+    // 端口预检（仅日志）
+    if !check_port_available() {
+        eprintln!("[LaiMePet] 警告: 端口 8000 已被占用，sidecar 启动可能失败");
+    }
+
     if let Some(app) = app {
         if let Some(sidecar_exe) = find_bundled_sidecar(app) {
             let work_dir = sidecar_exe.parent().unwrap_or(Path::new("."));
@@ -152,8 +178,8 @@ fn try_spawn_sidecar(app: Option<&tauri::AppHandle>) -> Option<Child> {
 
             return Command::new(&sidecar_exe)
                 .current_dir(work_dir)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn()
                 .map_err(|e| {
                     eprintln!("[LaiMePet] 启动打包 sidecar 失败: {}", e);
@@ -172,8 +198,8 @@ fn try_spawn_sidecar(app: Option<&tauri::AppHandle>) -> Option<Child> {
     Command::new(&python)
         .arg(&main_py)
         .current_dir(work_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| {
             eprintln!("[LaiMePet] 启动 sidecar 失败: {}", e);
@@ -346,6 +372,72 @@ fn restart_sidecar(app: tauri::AppHandle, state: tauri::State<'_, SidecarProcess
     }
 }
 
+/// 启动 sidecar 健康监控线程。
+///
+/// 每 5 秒检查一次子进程是否存活（通过 `try_wait`）。
+/// 如果检测到进程意外退出且应用未在关闭中，自动重启。
+fn spawn_watchdog(app_handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        println!("[LaiMePet] Watchdog 已启动（每 5s 巡检）");
+
+        loop {
+            std::thread::sleep(Duration::from_secs(5));
+
+            let state = app_handle.state::<SidecarProcess>();
+            if state.shutdown.load(Ordering::SeqCst) {
+                println!("[LaiMePet] Watchdog 收到关闭信号，退出");
+                break;
+            }
+
+            // 检查子进程是否存活（或是否存在）
+            let child_missing = {
+                let mut guard = match state.child.lock() {
+                    Ok(g) => g,
+                    Err(_) => break, // Mutex poisoned
+                };
+                match guard.as_mut() {
+                    Some(child) => match child.try_wait() {
+                        Ok(Some(status)) => {
+                            eprintln!(
+                                "[LaiMePet] Watchdog: sidecar 进程已退出 (status={:?})",
+                                status
+                            );
+                            *guard = None; // 清除已退出的句柄
+                            true
+                        }
+                        Ok(None) => false, // 仍在运行
+                        Err(e) => {
+                            eprintln!("[LaiMePet] Watchdog: try_wait 错误: {}", e);
+                            *guard = None;
+                            true
+                        }
+                    },
+                    None => true, // 没有子进程（启动失败或尚未启动），需要重试
+                }
+            }; // MutexGuard 在此释放
+
+            if !child_missing {
+                continue;
+            }
+
+            // ── 子进程缺失，尝试启动/重启 ──
+            eprintln!("[LaiMePet] Watchdog: 尝试启动 sidecar...");
+            std::thread::sleep(Duration::from_secs(2)); // 等待端口释放
+
+            match try_spawn_sidecar(Some(&app_handle)) {
+                Some(new_child) => {
+                    let new_pid = new_child.id();
+                    state.set(new_child);
+                    println!("[LaiMePet] Watchdog: sidecar 启动成功 (PID {})", new_pid);
+                }
+                None => {
+                    eprintln!("[LaiMePet] Watchdog: sidecar 启动失败，5s 后重试");
+                }
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -452,6 +544,8 @@ pub fn run() {
                         let pid = child.id();
                         sidecar.set(child);
                         println!("[LaiMePet] Sidecar 已启动 (PID {})", pid);
+                        // 启动健康监控 watchdog
+                        spawn_watchdog(app.handle().clone());
                     }
                     None => {
                         eprintln!("[LaiMePet] 警告: 无法启动 Python sidecar，AI 功能将不可用");
