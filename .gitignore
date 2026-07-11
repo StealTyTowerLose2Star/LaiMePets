@@ -43,6 +43,13 @@ venv/
 services/build/
 services/outputs/
 services/uploads/
+services/inspect_output/
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Claude local settings
+.claude/settings.local.json
 
 # Misc
 *.swp

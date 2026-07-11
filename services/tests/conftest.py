@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -141,3 +142,25 @@ def run_e2e_pipeline(client, backend: str, pet_name: str = "E2E-Test") -> dict:
         "thumb_bytes": len(thumb_data),
         "error": None,
     }
+
+
+# ── 真实照片 fixtures ──
+
+
+def load_geigei_photos() -> list[bytes]:
+    """加载 Geigei01-03 真实猫照（用于预处理保真度测试）"""
+    photos = []
+    test_dir = Path(__file__).parent
+    for i in range(1, 4):
+        path = test_dir / f"Geigei{i:02d}.jpg"
+        if path.exists():
+            photos.append(path.read_bytes())
+    return photos
+
+
+def load_geigei_photo(index: int) -> bytes | None:
+    """加载单张 Geigei 照片（1-indexed）"""
+    path = Path(__file__).parent / f"Geigei{index:02d}.jpg"
+    if path.exists():
+        return path.read_bytes()
+    return None
