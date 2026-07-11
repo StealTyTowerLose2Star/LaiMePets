@@ -386,17 +386,66 @@ async def run_inference_async(
 
     这是一个异步包装，实际推理在线程池中运行（CPU/GPU 密集）。
     """
-    update_task(task_id, status="preprocessing", progress=10, current_step="预处理照片")
+    update_task(task_id, status="preprocessing", progress=5,
+                current_step="预处理照片")
 
-    # 模拟预处理延迟
-    await asyncio.sleep(0.5)
+    # Stage 1: AI 视角合成（可选）
+    photos_for_3d = photos
 
-    update_task(task_id, status="generating", progress=30, current_step="AI 特征提取中",
-                estimated_seconds=90)
+    if settings.enable_view_synthesis:
+        update_task(
+            task_id, status="view_synthesis", progress=15,
+            current_step="AI 分析猫咪特征...",
+            estimated_seconds=180,
+        )
+
+        try:
+            from .view_synthesis import run_view_synthesis
+            from .storage import save_view_images
+
+            print(f"[Pipeline] Stage 1: 视角合成 ({settings.view_synthesis_provider})")
+            synthesized_views, fully_successful = await asyncio.get_event_loop().run_in_executor(
+                _executor,
+                run_view_synthesis,
+                photos,
+                settings.view_synthesis_provider,
+            )
+
+            save_view_images(task_id, synthesized_views)
+
+            if fully_successful:
+                update_task(
+                    task_id, status="view_synthesis", progress=45,
+                    current_step="四视图生成完成",
+                )
+                photos_for_3d = [v for v in synthesized_views if v is not None]
+                print(f"[Pipeline] 视角合成成功，使用 {len(photos_for_3d)} 张标准视图")
+            else:
+                success_count = sum(1 for v in synthesized_views if v is not None)
+                update_task(
+                    task_id, status="view_synthesis", progress=40,
+                    current_step=f"视角合成部分完成 ({success_count}/4)",
+                )
+                if success_count >= 2:
+                    photos_for_3d = [v for v in synthesized_views if v is not None]
+                else:
+                    print(f"[Pipeline] 视角合成失败，回退直接多图模式")
+
+        except Exception as e:
+            print(f"[Pipeline] 视角合成异常，回退直接多图模式: {e}")
+            update_task(
+                task_id, status="view_synthesis", progress=40,
+                current_step=f"视角合成跳过: {str(e)[:50]}",
+            )
+            photos_for_3d = photos
+
+    # Stage 2: 3D 生成
+    update_task(task_id, status="generating", progress=50,
+                current_step="3D 模型生成中", estimated_seconds=90)
 
     try:
         result = await asyncio.get_event_loop().run_in_executor(
-            _executor, _run_inference, photos, realism
+            _executor, _run_inference, photos_for_3d, realism
         )
 
         update_task(task_id, status="postprocessing", progress=85, current_step="后处理：骨骼绑定")
@@ -417,6 +466,8 @@ async def run_inference_async(
             "realism": realism,
             "photo_count": len(photos),
             "model_type": settings.ai_model,
+            "view_synthesis": settings.enable_view_synthesis,
+            "view_synthesis_provider": settings.view_synthesis_provider if settings.enable_view_synthesis else None,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         meta_path = settings.output_dir / pet_id / "meta.json"
@@ -436,6 +487,25 @@ async def run_inference_async(
                 "model_format": "glb",
             },
         )
+
+        # 保留视角合成产物到 outputs 目录
+        if settings.enable_view_synthesis:
+            try:
+                from .storage import get_view_images
+                view_images = get_view_images(task_id)
+                if view_images:
+                    views_out_dir = settings.output_dir / pet_id / "views"
+                    views_out_dir.mkdir(parents=True, exist_ok=True)
+                    views_src_dir = settings.upload_dir / task_id / "views"
+                    for img_info in view_images:
+                        src = views_src_dir / img_info["filename"]
+                        dst = views_out_dir / img_info["filename"]
+                        if src.exists():
+                            import shutil
+                            shutil.copy2(src, dst)
+                    print(f"[Pipeline] 视角合成产物已保留到 {views_out_dir}")
+            except Exception as e:
+                print(f"[Pipeline] 保留视角产物异常: {e}")
 
         # 模型已保存到 outputs/，清理 uploads/ 中的临时文件
         from .storage import cleanup_task_files

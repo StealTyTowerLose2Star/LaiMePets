@@ -100,15 +100,22 @@ def preprocess_photo(
     remove_bg: bool = True,
     smart_crop: bool = True,
     enhance: bool = True,
+    mode: str = "fidelity",
 ) -> bytes:
     """
-    预处理单张照片，为 AI 3D 生成做最佳准备：
+    预处理单张照片，为 AI 3D 生成做最佳准备。
 
+    mode 参数控制预处理程度：
+    - "fidelity" (默认) — 身份保留：仅缩放+抠图+裁剪，保留原始毛发细节
+    - "enhanced" — 增强模式：额外降噪+锐化+对比度+饱和度（可能改变外观）
+    - "minimal" — 最简模式：仅缩放，不做任何处理（给 AI 最原始的输入）
+
+    其他步骤：
     1. 缩放到最大 2048px（保留比例）
-    2. 轻微去噪
-    3. 移除背景（rembg u2net） + 合成白色背景
-    4. 智能裁剪到宠物主体（让 AI 聚焦在宠物上，而非大片空白）
-    5. 图像增强（锐化 + 对比度优化，帮助 AI 捕捉细节）
+    2. 轻微去噪（fidelity/enhanced 模式）
+    3. 移除背景（rembg u2net） + 合成白色背景（fidelity/enhanced 模式）
+    4. 智能裁剪到宠物主体（fidelity/enhanced 模式）
+    5. 图像增强（仅 enhanced 模式）
     6. 输出 RGB PNG
     """
     img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
@@ -121,8 +128,15 @@ def preprocess_photo(
         new_size = (int(w * ratio), int(h * ratio))
         img = img.resize(new_size, Image.LANCZOS)
 
-    # ── 2. 轻微降噪 ──
-    img = img.filter(ImageFilter.MedianFilter(size=3))
+    # minimal 模式到此为止
+    if mode == "minimal":
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+    # ── 2. 轻微降噪（fidelity/enhanced）──
+    if mode in ("fidelity", "enhanced"):
+        img = img.filter(ImageFilter.MedianFilter(size=3))
 
     # ── 3. 背景移除 ──
     if remove_bg and settings.enable_background_removal:
@@ -143,8 +157,8 @@ def preprocess_photo(
     if smart_crop and remove_bg and settings.enable_background_removal:
         img = _smart_crop_to_subject(img)
 
-    # ── 5. 图像增强（让 AI 更容易识别毛发纹理等细节）──
-    if enhance:
+    # ── 5. 图像增强（仅 enhanced 模式）──
+    if mode == "enhanced" or (enhance and mode != "fidelity"):
         img = _enhance_for_ai(img)
 
     # ── 6. 输出 ──

@@ -112,7 +112,13 @@ async def generate_pet(
     preprocessed = []
     for filename, data in photo_data:
         await save_upload(task_id, filename, data)
-        pp_data = preprocess_photo(data)
+        pp_data = preprocess_photo(
+            data,
+            remove_bg=settings.enable_background_removal,
+            smart_crop=True,
+            enhance=(settings.preprocessing_mode == "enhanced"),
+            mode=settings.preprocessing_mode,
+        )
         await save_preprocessed(task_id, filename, pp_data)
         preprocessed.append(pp_data)
 
@@ -121,10 +127,11 @@ async def generate_pet(
         run_inference_async, task_id, preprocessed, realism
     )
 
+    mode_labels = {"fidelity": "身份保留", "enhanced": "增强", "minimal": "最简"}
     return TaskResponse(
         task_id=task_id,
         status="pending",
-        message=f"已接收 {len(preprocessed)} 张照片，开始生成…",
+        message=f"已接收 {len(preprocessed)} 张照片（{mode_labels.get(settings.preprocessing_mode, settings.preprocessing_mode)}模式），开始生成…",
         estimated_seconds=120,
     )
 
@@ -194,3 +201,88 @@ async def list_generated_pets():
             created_at=created_at,
         ))
     return result
+
+
+# ── 预处理产物检查端点 ──
+
+
+@router.get("/task/{task_id}/preprocessed")
+async def list_preprocessed_images(task_id: str):
+    """
+    列出某任务的所有预处理产物。
+
+    用于检查预处理管线输出质量 — 可在生成前确认
+    发给 AI 的照片是否保留了猫咪的身份特征。
+    """
+    pp_dir = settings.upload_dir / task_id / "preprocessed"
+    if not pp_dir.exists():
+        raise HTTPException(status_code=404, detail=f"任务 {task_id} 的预处理产物不存在（可能已清理或任务不存在）")
+
+    files = sorted(pp_dir.iterdir())
+    return {
+        "task_id": task_id,
+        "count": len(files),
+        "images": [f.name for f in files],
+        "urls": [f"/api/v1/task/{task_id}/preprocessed/{f.name}" for f in files],
+    }
+
+
+@router.get("/task/{task_id}/preprocessed/{filename}")
+async def get_preprocessed_image(task_id: str, filename: str):
+    """
+    获取单张预处理后的照片。
+
+    可对比原始上传照片和预处理产物，确认：
+    - 背景移除是否完整
+    - 猫咪主体是否被误裁
+    - 锐化/增强是否过度
+    """
+    pp_dir = settings.upload_dir / task_id / "preprocessed"
+    filepath = pp_dir / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail=f"预处理图片 {filename} 不存在")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(filepath, media_type="image/png")
+
+
+# ── 视角合成产物检查端点 ──
+
+
+@router.get("/task/{task_id}/views")
+async def list_view_images(task_id: str):
+    """
+    列出 AI 视角合成生成的四视图（前/后/左/右）。
+
+    用于确认 AI 是否正确理解了猫咪的外观特征。
+    """
+    from services.storage import get_view_images
+
+    images = get_view_images(task_id)
+    if not images:
+        raise HTTPException(
+            status_code=404,
+            detail=f"任务 {task_id} 的视角合成产物不存在（可能未启用视角合成或任务不存在）",
+        )
+
+    return {
+        "task_id": task_id,
+        "count": len(images),
+        "images": [img["filename"] for img in images],
+        "angles": [img["angle"] for img in images],
+        "urls": [f"/api/v1/task/{task_id}/views/{img['filename']}" for img in images],
+    }
+
+
+@router.get("/task/{task_id}/views/{filename}")
+async def get_view_image(task_id: str, filename: str):
+    """
+    获取单张 AI 生成的视角合成图片。
+    """
+    views_dir = settings.upload_dir / task_id / "views"
+    filepath = views_dir / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail=f"视角图片 {filename} 不存在")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(filepath, media_type="image/png")

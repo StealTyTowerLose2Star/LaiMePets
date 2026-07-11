@@ -19,8 +19,9 @@ class TaskStatus(str, Enum):
 
     PENDING = "pending"  # 等待处理
     PREPROCESSING = "preprocessing"  # 照片预处理中
-    GENERATING = "generating"  # AI 推理中
-    POSTPROCESSING = "postprocessing"  # 后处理（绑定骨骼等）
+    VIEW_SYNTHESIS = "view_synthesis"  # AI 视角合成：照片→标准四视图
+    GENERATING = "generating"  # AI 推理中（3D 生成）
+    POSTPROCESSING = "postprocessing"  # 后处理（保存文件等）
     COMPLETED = "completed"  # 生成完成
     FAILED = "failed"  # 生成失败
 

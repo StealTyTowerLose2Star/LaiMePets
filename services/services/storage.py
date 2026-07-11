@@ -99,3 +99,32 @@ def cleanup_task_files(task_id: str) -> None:
     task_dir = settings.upload_dir / task_id
     if task_dir.exists():
         shutil.rmtree(task_dir)
+
+
+def save_view_images(task_id: str, views: list) -> None:
+    """保存 AI 生成的视角合成图片"""
+    views_dir = _ensure_dir(settings.upload_dir / task_id / "views")
+    angle_names = ["front", "back", "left", "right"]
+    for i, view_bytes in enumerate(views):
+        if view_bytes is not None:
+            name = angle_names[i] if i < len(angle_names) else f"view_{i}"
+            filepath = views_dir / f"{name}.png"
+            filepath.write_bytes(view_bytes)
+
+
+def get_view_images(task_id: str) -> list[dict]:
+    """获取任务的视角合成图片列表"""
+    views_dir = settings.upload_dir / task_id / "views"
+    if not views_dir.exists():
+        return []
+
+    images = []
+    for angle in ["front", "back", "left", "right"]:
+        filepath = views_dir / f"{angle}.png"
+        if filepath.exists():
+            images.append({
+                "angle": angle,
+                "filename": f"{angle}.png",
+                "size_bytes": filepath.stat().st_size,
+            })
+    return images
