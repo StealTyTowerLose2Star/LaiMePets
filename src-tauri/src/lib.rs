@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -342,6 +342,90 @@ fn check_sidecar_port() -> Result<bool, String> {
     }
 }
 
+/// 保存 JSON 数据到应用数据目录。
+///
+/// 文件写入 `<app_data>/lai-me-pets/<filename>`。
+#[tauri::command]
+fn save_json(app: tauri::AppHandle, filename: String, data: serde_json::Value) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+
+    // 确保目录存在
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建目录: {}", e))?;
+
+    let path = dir.join(&filename);
+    let json = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("JSON 序列化失败: {}", e))?;
+
+    let byte_len = json.len();
+    std::fs::write(&path, json).map_err(|e| format!("写入文件失败: {}", e))?;
+
+    println!("[LaiMePet] save_json: {} ({} bytes)", path.display(), byte_len);
+    Ok(())
+}
+
+/// 从应用数据目录读取 JSON 数据。
+///
+/// 从 `<app_data>/lai-me-pets/<filename>` 读取，文件不存在时返回 null。
+#[tauri::command]
+fn load_json(app: tauri::AppHandle, filename: String) -> Result<Option<serde_json::Value>, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+
+    let path = dir.join(&filename);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let json = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+
+    serde_json::from_str(&json)
+        .map(Some)
+        .map_err(|e| format!("JSON 解析失败: {}", e))
+}
+
+/// 保存 API 配置为 .env 文件（供 Python sidecar 读取）。
+///
+/// 写入位置：应用数据目录（dev: services/, release: 安装目录）。
+/// Python sidecar 启动时 CWD 设为 exe 所在目录，会读取该 .env。
+#[tauri::command]
+fn save_env_config(app: tauri::AppHandle, config: serde_json::Value) -> Result<(), String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("无法获取资源目录: {}", e))?;
+
+    let env_path = resource_dir.join(".env");
+    let mut lines: Vec<String> = Vec::new();
+
+    if let Some(obj) = config.as_object() {
+        for (key, value) in obj {
+            if let Some(v) = value.as_str() {
+                if !v.is_empty() {
+                    lines.push(format!("{}={}", key, v));
+                }
+            }
+        }
+    }
+
+    let content = lines.join("\n") + "\n";
+    let byte_len = content.len();
+    std::fs::write(&env_path, content)
+        .map_err(|e| format!("写入 .env 失败: {}", e))?;
+
+    println!(
+        "[LaiMePet] save_env_config: {} ({} bytes)",
+        env_path.display(),
+        byte_len
+    );
+    Ok(())
+}
+
 /// 重启 sidecar 进程
 ///
 /// 先杀死当前进程，再启动新的。
@@ -463,6 +547,9 @@ pub fn run() {
             get_window_info,
             check_sidecar_port,
             restart_sidecar,
+            save_json,
+            load_json,
+            save_env_config,
         ])
         .setup(|app| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder};

@@ -42,6 +42,9 @@
     "shortDescription": "AI-powered desktop pet companion for Windows.",
     "longDescription": "LaiMePet turns real pet photos into a 3D desktop companion that lives on your Windows desktop.",
     "useLocalToolsDir": true,
+    "resources": [
+      "WebView2Loader.dll"
+    ],
     "externalBin": [
       "binaries/laimepet-ai-sidecar"
     ],

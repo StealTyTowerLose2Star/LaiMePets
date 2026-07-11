@@ -1,29 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-from shutil import copy2
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 block_cipher = None
-
 service_dir = Path(SPECPATH).resolve()
-repo_root = service_dir.parent
-tauri_binaries_dir = repo_root / "src-tauri" / "binaries"
-pyinstaller_work_dir = service_dir / "build" / "pyinstaller"
-sidecar_stem = "laimepet-ai-sidecar"
-sidecar_name = f"{sidecar_stem}-x86_64-pc-windows-gnu"
-msvc_sidecar_name = f"{sidecar_stem}-x86_64-pc-windows-msvc.exe"
-tauri_binaries_dir.mkdir(parents=True, exist_ok=True)
-pyinstaller_work_dir.mkdir(parents=True, exist_ok=True)
-
-try:
-    from PyInstaller import config as pyinstaller_config
-    pyinstaller_config.CONF["distpath"] = str(tauri_binaries_dir)
-    pyinstaller_config.CONF["workpath"] = str(pyinstaller_work_dir)
-except Exception:
-    pass
 
 
 def optional_collect_submodules(package: str) -> list[str]:
@@ -40,14 +23,12 @@ def optional_collect_data_files(package: str) -> list[tuple[str, str]]:
         return []
 
 
-hiddenimports = [
+hiddenimports = {
     "aiofiles",
-    "anyio",
-    "click",
     "fastapi",
     "fastapi.middleware.cors",
     "fastapi.responses",
-    "h11",
+    "fastapi.staticfiles",
     "httpx",
     "multipart",
     "numpy",
@@ -61,46 +42,42 @@ hiddenimports = [
     "pydantic_settings",
     "rembg",
     "rembg.bg",
-    "replicate",
-    "scipy",
-    "skimage",
     "starlette",
-    "tqdm",
     "trimesh",
     "trimesh.creation",
     "trimesh.exchange.export",
     "trimesh.exchange.gltf",
     "trimesh.transformations",
+    "tripo3d",
     "uvicorn",
     "uvicorn.lifespan.on",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.server",
-]
+}
 
-# DashScope is called through HTTPS/curl in services/services/inference.py, not
-# through the dashscope Python SDK.
-hiddenimports += optional_collect_submodules("uvicorn")
-hiddenimports += optional_collect_submodules("rembg")
-hiddenimports += optional_collect_submodules("trimesh")
+for package in ("uvicorn", "rembg", "trimesh", "tripo3d", "replicate"):
+    hiddenimports.update(optional_collect_submodules(package))
 
 datas = []
-datas += optional_collect_data_files("rembg")
-datas += optional_collect_data_files("PIL")
-datas += optional_collect_data_files("trimesh")
+for package in ("rembg", "PIL", "trimesh", "tripo3d"):
+    datas += optional_collect_data_files(package)
 
+# Do not bundle .env. API keys should be supplied by the environment or user config.
 excludes = [
-    "node_modules",
-    ".venv",
-    "tests",
     "accelerate",
+    "celery",
     "diffusers",
-    "tkinter",
-    "matplotlib",
     "IPython",
     "jupyter",
+    "matplotlib",
+    "node_modules",
+    "opencv_python_headless",
+    "redis",
     "tensorflow",
+    "tests",
+    "tkinter",
     "torch",
     "torchaudio",
     "torchvision",
@@ -112,7 +89,7 @@ a = Analysis(
     pathex=[str(service_dir)],
     binaries=[],
     datas=datas,
-    hiddenimports=sorted(set(hiddenimports)),
+    hiddenimports=sorted(hiddenimports),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -129,22 +106,17 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name=sidecar_name,
+    name="laimepet-ai-sidecar",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
 )
-
-gnu_sidecar_path = tauri_binaries_dir / f"{sidecar_name}.exe"
-msvc_sidecar_path = tauri_binaries_dir / msvc_sidecar_name
-if gnu_sidecar_path.exists():
-    copy2(gnu_sidecar_path, msvc_sidecar_path)

@@ -1,9 +1,19 @@
 """LaiMePet AI Service — FastAPI 入口"""
 
+import os
+import sys
 from contextlib import asynccontextmanager
+
+if sys.stdin is None:
+    sys.stdin = open(os.devnull, "r")
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from routes.api import router
@@ -68,6 +78,19 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+settings.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/health")
+async def health_alias():
+    from routes.api import health_check
+
+    return await health_check()
+
+
+# 静态文件 — 开发/调试用途
+app.mount("/outputs", StaticFiles(directory=str(settings.output_dir)), name="outputs")
 
 
 @app.get("/")

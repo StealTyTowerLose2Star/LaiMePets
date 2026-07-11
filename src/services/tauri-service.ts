@@ -165,3 +165,27 @@ export async function loadJSON<T>(filename: string): Promise<T | null> {
     return raw ? (JSON.parse(raw) as T) : null;
   }
 }
+
+// ── API 配置 ──
+
+export interface ApiKeyConfig {
+  REPLICATE_API_TOKEN: string;
+  TRIPO_API_KEY: string;
+  DASHSCOPE_API_KEY: string;
+  ENABLE_VIEW_SYNTHESIS: string;
+}
+
+/** 保存 API Key 配置到 .env 文件（供 Python sidecar 读取） */
+export async function saveEnvConfig(config: Partial<ApiKeyConfig>): Promise<void> {
+  if (isTauri()) {
+    const invoke = await getInvoke();
+    await invoke('save_env_config', { config });
+  }
+  // 浏览器模式下同时保存到 localStorage
+  await saveJSON('api_keys', config);
+}
+
+/** 读取已保存的 API Key 配置 */
+export async function loadEnvConfig(): Promise<Partial<ApiKeyConfig> | null> {
+  return loadJSON<Partial<ApiKeyConfig>>('api_keys');
+}
