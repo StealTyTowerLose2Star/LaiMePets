@@ -229,3 +229,40 @@ PyInstaller sidecar 打包配置完成，构建因 PyInstaller 无法安装而�
 **Follow-ups / Risks**
 - CLAUDE.md 的自动 compact 说明和 public/models/geigei01-dcef6fdb.glb 仍未提交，需用户确认是否纳入
 - 下一步可做安装包冒烟测试：安装、启动、sidecar 进程与健康检查、卸载
+
+## 2026-07-05 23:26:17 +08:00
+
+**Summary**
+Sprint 2.4 Sidecar 集成测试完成：修复 3 个缺陷 + 4 项测试全部通过
+
+**Changed Files**
+- services/main.py
+- src-tauri/src/lib.rs
+
+**Verification**
+- cargo check 零警告
+- tsc --noEmit 通过
+- 4 项 sidecar 集成测试通过（启动/杀进程/重启/清理）
+- PyInstaller 重建 exe (343MB) health check 200 OK
+
+**Follow-ups / Risks**
+- Watchdog 崩溃恢复需 Tauri 运行时验证
+- restart_sidecar Tauri command 需端到端验证
+
+## 2026-07-11 12:10:22 +08:00
+
+**Summary**
+完成 settingsStore 持久化迁移：从直接 localStorage 改为使用 tauri-service 的 saveJSON/loadJSON，与 petStore 的持久化抽象保持一致；新增 store 级测试覆盖保存设置后模拟刷新再加载仍保留。
+
+**Changed Files**
+- src/stores/settingsStore.ts
+- src/stores/__tests__/settingsStore.test.ts
+
+**Verification**
+- npm test -- src/stores/__tests__/settingsStore.test.ts --run 通过
+- npm test -- --run 通过，36 tests passed
+- npm run build 通过，保留既有 Desktop chunk >500k 警告
+
+**Follow-ups / Risks**
+- 内置浏览器不可用且项目未安装 Playwright，未能做真实浏览器点击刷新；已用 store 单测模拟保存→刷新内存→重新加载验证
+- 当前工作区存在大量其他未提交改动，本次提交将只包含 settingsStore 迁移相关文件

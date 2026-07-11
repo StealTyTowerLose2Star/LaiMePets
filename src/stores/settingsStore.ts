@@ -1,6 +1,21 @@
 import { create } from 'zustand';
 import type { AppSettings } from '@/types';
 import { DEFAULT_SETTINGS } from '@/types';
+import { loadJSON, saveJSON } from '@/services/tauri-service';
+
+const SETTINGS_KEY = 'lai-me-pet-settings';
+
+async function persistSettings(settings: AppSettings): Promise<void> {
+  try {
+    await saveJSON(SETTINGS_KEY, settings);
+  } catch {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+      // ignore quota errors
+    }
+  }
+}
 
 interface SettingsState {
   // 状态
@@ -18,13 +33,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoaded: false,
 
   loadSettings: async () => {
-    // TODO: Sprint 4 对接 Tauri localStorage / Rust 持久化
     try {
-      const stored = localStorage.getItem('lai-me-pet-settings');
+      const stored = await loadJSON<Partial<AppSettings>>(SETTINGS_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored) as Partial<AppSettings>;
         set({
-          settings: { ...DEFAULT_SETTINGS, ...parsed },
+          settings: { ...DEFAULT_SETTINGS, ...stored },
           isLoaded: true,
         });
       } else {
@@ -39,13 +52,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings;
     const updated = { ...current, ...partial };
     set({ settings: updated });
-    // TODO: 迁移到 Tauri API 持久化
-    localStorage.setItem('lai-me-pet-settings', JSON.stringify(updated));
+    await persistSettings(updated);
   },
 
   resetSettings: async () => {
     set({ settings: DEFAULT_SETTINGS });
-    localStorage.removeItem('lai-me-pet-settings');
+    await persistSettings(DEFAULT_SETTINGS);
   },
 }));
 
