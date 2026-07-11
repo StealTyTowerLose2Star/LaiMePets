@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { InteractionType, PetProfile, PetState } from '@/types';
 import { listPets } from '@/services/api';
+import { saveJSON, loadJSON } from '@/services/tauri-service';
+
+const PROFILES_KEY = 'lai-me-pet-profiles';
 
 interface PetStoreState {
   // 宠物列表
@@ -20,11 +23,17 @@ interface PetStoreState {
   recordInteraction: (type: InteractionType) => void;
 }
 
-function persistProfiles(profiles: PetProfile[]): void {
+/** 持久化宠物列表 — 自动选择 Tauri FS 或 localStorage */
+async function persistProfiles(profiles: PetProfile[]): Promise<void> {
   try {
-    localStorage.setItem('lai-me-pet-profiles', JSON.stringify(profiles));
+    await saveJSON(PROFILES_KEY, profiles);
   } catch {
-    // ignore quota errors
+    // Tauri FS 不可用时降级到 localStorage
+    try {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+    } catch {
+      // ignore quota errors
+    }
   }
 }
 
@@ -72,11 +81,10 @@ export const usePetStore = create<PetStoreState>((set) => ({
       console.debug('[petStore] 后端 API 不可用，使用本地缓存');
     }
 
-    // 降级：localStorage
+    // 降级：Tauri FS → localStorage
     try {
-      const stored = localStorage.getItem('lai-me-pet-profiles');
-      if (stored) {
-        const profiles = JSON.parse(stored) as PetProfile[];
+      const profiles = await loadJSON<PetProfile[]>(PROFILES_KEY);
+      if (profiles && profiles.length > 0) {
         set((state) => ({
           profiles,
           isProfilesLoaded: true,

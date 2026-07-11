@@ -7,6 +7,7 @@ export { Environment } from './Environment';
 export { useModelFit } from './hooks/useModelFit';
 export { usePetAnimation } from './hooks/usePetAnimation';
 export { useProceduralAnimation } from './hooks/useProceduralAnimation';
+export type { SubPartRefs } from './hooks/useProceduralAnimation';
 export { useRealismShader } from './hooks/useRealismShader';
 
 // Utilities

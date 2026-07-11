@@ -8,8 +8,10 @@ import {
   pollTaskStatus,
   getModelUrl,
   getThumbnailUrl,
+  getTaskViews,
+  getViewImageUrl,
 } from '@/services/api';
-import type { TaskStatus } from '@/services/api';
+import type { TaskStatus, TaskViews } from '@/services/api';
 
 // ── 常量 ──
 
@@ -513,6 +515,8 @@ function GenerationStep({
 }) {
   const startedRef = useRef(false);
   const taskIdRef = useRef<string | null>(null);
+  const [viewImages, setViewImages] = useState<TaskViews | null>(null);
+  const fetchedViewsRef = useRef(false);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -550,7 +554,19 @@ function GenerationStep({
         // 轮询直到完成
         const result = await pollTaskStatus(
           taskIdRef.current,
-          undefined,
+          (_status) => {
+            // 当进入视角合成阶段时，拉取四视图预览
+            if (_status.status === 'view_synthesis' && !fetchedViewsRef.current) {
+              // 稍后等后端生成完成再拉取
+            }
+            if (_status.status === 'generating' && !fetchedViewsRef.current) {
+              // 视角合成已完成，尝试拉取
+              fetchedViewsRef.current = true;
+              getTaskViews(taskIdRef.current!)
+                .then(setViewImages)
+                .catch(() => {/* views not available yet */});
+            }
+          },
           1500,
           300_000,
         );
@@ -573,11 +589,41 @@ function GenerationStep({
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const phases = ['特征提取', '模型生成', '骨骼绑定'];
-  const progress = genStatus?.progress ?? 0;
+  // 根据当前状态动态确定阶段列表
+  const hasViewSynthesis =
+    genStatus?.status === 'view_synthesis' ||
+    (genStatus != null &&
+      genStatus.status !== 'pending' &&
+      genStatus.status !== 'preprocessing');
+
+  // 如果全程没有进入 view_synthesis 状态，压缩为 3 阶段
+  const phases = isGenerating && !hasViewSynthesis
+    ? ['特征提取', '模型生成', '后处理']
+    : ['特征提取', '视角合成', '模型生成', '后处理'];
+
+  // 状态 → 阶段索引映射
+  const statusIndexMap: Record<string, number> = {
+    pending: 0,
+    preprocessing: 0,
+    view_synthesis: 1,
+    generating: hasViewSynthesis ? 2 : 1,
+    postprocessing: hasViewSynthesis ? 3 : 2,
+    completed: hasViewSynthesis ? 4 : 3,
+    failed: -1,
+  };
+
+  const phaseIndex = genStatus
+    ? (statusIndexMap[genStatus.status] ?? 0)
+    : 0;
   const currentStep = genStatus?.current_step ?? '';
-  const phaseIndex =
-    progress < 30 ? 0 : progress < 70 ? 1 : progress < 100 ? 2 : 3;
+
+  // 视图角度中文名
+  const angleLabels: Record<string, string> = {
+    front: '正面',
+    back: '背面',
+    left: '左侧',
+    right: '右侧',
+  };
 
   return (
     <div className="text-center">
@@ -590,7 +636,7 @@ function GenerationStep({
       </h2>
       <p className="mt-1 text-body-sm text-neutral-500">
         {isGenerating
-          ? '正在通过 AI 生成 3D 模型，预计 1-2 分钟'
+          ? 'AI 正在分析照片并生成 3D 模型，预计 1-3 分钟'
           : genError
             ? '请检查网络连接后重试'
             : '模型已生成，请前往预览'}
@@ -612,13 +658,13 @@ function GenerationStep({
             }`}
           >
             {i < phaseIndex ? (
-              <span className="text-success">✓</span>
+              <span className="text-success shrink-0">✓</span>
             ) : i === phaseIndex && isGenerating ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-500" />
+              <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-brand-300 border-t-brand-500" />
             ) : i === phaseIndex && genError ? (
-              <span className="text-error">✗</span>
+              <span className="text-error shrink-0">✗</span>
             ) : (
-              <div className="h-4 w-4 rounded-full border-2 border-neutral-200 dark:border-neutral-700" />
+              <div className="h-4 w-4 shrink-0 rounded-full border-2 border-neutral-200 dark:border-neutral-700" />
             )}
             <span
               className={`text-body-sm ${
@@ -646,15 +692,52 @@ function GenerationStep({
           className={`h-full rounded-full transition-all duration-slow ${
             genError ? 'bg-error' : 'bg-brand-500'
           }`}
-          style={{ width: `${Math.max(progress, phaseIndex * 25)}%` }}
+          style={{ width: `${Math.max(genStatus?.progress ?? 0, phaseIndex * (100 / phases.length))}%` }}
         />
       </div>
 
       {/* 进度百分比 */}
       {isGenerating && (
         <p className="mt-2 text-caption text-neutral-400">
-          {Math.round(progress)}% — {currentStep || '处理中...'}
+          {Math.round(genStatus?.progress ?? 0)}% — {currentStep || '处理中...'}
         </p>
+      )}
+
+      {/* 四视图预览（视角合成阶段完成后展示） */}
+      {viewImages && viewImages.images.length > 0 && (
+        <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50/30 p-4 dark:border-brand-800 dark:bg-brand-900/10">
+          <p className="text-caption font-medium text-brand-700 dark:text-brand-300">
+            🤖 AI 视角合成结果
+          </p>
+          <div className="mt-2 grid grid-cols-4 gap-2">
+            {['front', 'back', 'left', 'right'].map((angle) => {
+              const filename = viewImages.images.find((n) => n.startsWith(angle));
+              return (
+                <div key={angle} className="flex flex-col items-center">
+                  <div className="h-20 w-20 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                    {filename ? (
+                      <img
+                        src={getViewImageUrl(viewImages.task_id, filename)}
+                        alt={angleLabels[angle] ?? angle}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-neutral-300">
+                        —
+                      </div>
+                    )}
+                  </div>
+                  <span className="mt-1 text-[10px] text-neutral-400">
+                    {angleLabels[angle] ?? angle}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* 错误信息 + 操作 */}
@@ -667,7 +750,6 @@ function GenerationStep({
               variant="ghost"
               size="sm"
               onClick={() => {
-                // 重新开始生成
                 startedRef.current = false;
                 onRetry();
               }}
@@ -678,7 +760,6 @@ function GenerationStep({
               variant="ghost"
               size="sm"
               onClick={() => {
-                // 返回上一步更换照片
                 onRetry();
                 navigate({ page: 'create-pet', step: 1 });
               }}

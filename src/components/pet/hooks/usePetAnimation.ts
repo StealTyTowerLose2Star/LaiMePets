@@ -78,22 +78,21 @@ export function usePetAnimation(
   behavior: PetBehavior,
   groupRef: React.RefObject<THREE.Group | null>,
 ): PetAnimationResult {
-  const animations = gltfResult?.animations ?? [];
-  const clipNames = animations.map((c) => c.name).filter(Boolean);
+  const animations = gltfResult?.animations;
+  const clipNames = animations?.map((c) => c.name).filter(Boolean) ?? [];
 
   // 使用 drei 的 useAnimations（仅当有动画时）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { actions, mixer } = useAnimations(animations, gltfResult?.scene);
+  const { actions, mixer } = useAnimations(animations ?? [], gltfResult?.scene);
 
   // 构建片段→行为映射
-  const clipMap = useMemo(() => buildClipMap(animations), [animations]);
+  const clipMap = useMemo(() => buildClipMap(animations ?? []), [animations]);
 
   // 追踪当前活跃的 action 用于交叉淡入淡出
   const currentActionRef = useRef<AnimationAction | null>(null);
   const currentBehaviorRef = useRef<PetBehavior>(behavior);
 
   // 是否有骨骼动画可用
-  const hasSkeletalAnimations = animations.length > 0 && Object.keys(actions).length > 0;
+  const hasSkeletalAnimations = (animations?.length ?? 0) > 0 && Object.keys(actions).length > 0;
 
   // ── 程序化动画回退 ──
   useProceduralAnimation(groupRef, behavior, {
@@ -139,7 +138,7 @@ export function usePetAnimation(
     currentAction: currentActionRef.current,
     isUsingSkeletal: hasSkeletalAnimations,
     currentBehavior: currentBehaviorRef.current,
-    clipCount: animations.length,
+    clipCount: animations?.length ?? 0,
     clipNames,
   };
 }

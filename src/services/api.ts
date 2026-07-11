@@ -36,9 +36,18 @@ export interface TaskResponse {
   estimated_seconds: number;
 }
 
+export type TaskStatusCode =
+  | 'pending'
+  | 'preprocessing'
+  | 'view_synthesis'
+  | 'generating'
+  | 'postprocessing'
+  | 'completed'
+  | 'failed';
+
 export interface TaskStatus {
   task_id: string;
-  status: 'pending' | 'preprocessing' | 'generating' | 'postprocessing' | 'completed' | 'failed';
+  status: TaskStatusCode;
   progress: number;
   current_step: string;
   message: string;
@@ -50,6 +59,20 @@ export interface TaskStatus {
     model_size_bytes: number;
     model_format: string;
   } | null;
+}
+
+export interface ViewImage {
+  angle: string;
+  filename: string;
+  size_bytes: number;
+}
+
+export interface TaskViews {
+  task_id: string;
+  count: number;
+  images: string[];
+  angles: string[];
+  urls: string[];
 }
 
 export interface PetInfo {
@@ -150,4 +173,16 @@ export async function pollTaskStatus(
   }
 
   throw new Error(`任务 ${taskId} 超时（${timeoutMs / 1000}s）`);
+}
+
+/** 获取视角合成四视图列表 */
+export async function getTaskViews(taskId: string): Promise<TaskViews> {
+  const res = await fetch(`${API_BASE}/task/${taskId}/views`);
+  if (!res.ok) throw new Error(`获取视角列表失败: ${res.status}`);
+  return res.json();
+}
+
+/** 获取单张视角合成图片的 URL */
+export function getViewImageUrl(taskId: string, filename: string): string {
+  return `${API_BASE}/task/${taskId}/views/${filename}`;
 }

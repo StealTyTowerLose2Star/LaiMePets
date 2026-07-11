@@ -1,8 +1,9 @@
 import { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
 import type { Mesh, Group } from 'three';
 import type { PetBehavior } from '@/types';
 import { computeRealismConfig } from './shaders/toon';
+import { useProceduralAnimation } from './hooks/useProceduralAnimation';
+import type { SubPartRefs } from './hooks/useProceduralAnimation';
 
 interface PlaceholderPetProps {
   behavior?: PetBehavior;
@@ -14,6 +15,9 @@ interface PlaceholderPetProps {
  *
  * 当真实 GLB 模型不可用时显示，具有程序化呼吸/尾巴/头部动画。
  * 根据 realism 参数调整材质外观（toon / PBR）。
+ *
+ * 动画由 useProceduralAnimation 驱动，支持所有 9 种行为
+ * 及子部件独立动画（头部、尾巴、耳朵）。
  */
 export function PlaceholderPet({
   behavior = 'idle',
@@ -25,6 +29,17 @@ export function PlaceholderPet({
   const leftEarRef = useRef<Mesh>(null);
   const rightEarRef = useRef<Mesh>(null);
 
+  // 子部件 refs map（传给 useProceduralAnimation）
+  const subParts: SubPartRefs = {
+    head: headRef,
+    tail: tailRef,
+    leftEar: leftEarRef,
+    rightEar: rightEarRef,
+  };
+
+  // 统一程序化动画（替代原有的内联 useFrame 动画代码）
+  useProceduralAnimation(groupRef, behavior, { amplitude: 1.0, speed: 1.0 }, subParts);
+
   // 根据写实度决定材质配置
   const config = computeRealismConfig(realism);
   const isToon = config.tier === 'toon';
@@ -34,83 +49,6 @@ export function PlaceholderPet({
   // 材质参数
   const bodyColor = '#f5a623';
   const bodyDarkColor = '#e8951a';
-
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime();
-    const group = groupRef.current;
-    const tail = tailRef.current;
-    const head = headRef.current;
-
-    if (!group || !tail) return;
-
-    // ── 空闲呼吸动画 ──
-    if (behavior === 'idle') {
-      group.position.y = Math.sin(t * 1.5) * 0.05;
-      tail.rotation.z = Math.sin(t * 2) * 0.3;
-      tail.rotation.x = Math.sin(t * 1.5) * 0.15;
-    }
-
-    // ── 走动动画 ──
-    if (behavior === 'walking') {
-      group.position.y = Math.abs(Math.sin(t * 3)) * 0.1;
-      tail.rotation.z = Math.sin(t * 4) * 0.5;
-    }
-
-    // ── 趴下动画 ──
-    if (behavior === 'lying_down') {
-      group.position.y = -0.3;
-      group.rotation.x = Math.sin(t * 0.5) * 0.05;
-    }
-
-    // ── 伸懒腰 ──
-    if (behavior === 'stretching') {
-      const stretch = Math.sin(t * 2) * 0.1 + 0.1;
-      group.scale.setScalar(1 + stretch * 0.3);
-      group.position.y = stretch * 0.5;
-    }
-
-    // ── 打哈欠 ──
-    if (behavior === 'yawning') {
-      group.position.y = Math.sin(t * 1.5) * 0.08 + 0.05;
-      group.rotation.x = Math.sin(t * 1.5) * 0.15;
-    }
-
-    // ── 舔毛 ──
-    if (behavior === 'licking') {
-      group.rotation.z = Math.sin(t * 3) * 0.1;
-    }
-
-    // ── 追尾巴 ──
-    if (behavior === 'chasing_tail') {
-      group.rotation.y = t * 1.5;
-    }
-
-    // ── 看窗外 ──
-    if (behavior === 'looking_outside') {
-      group.rotation.x = 0.2;
-      group.position.y = 0.05;
-      group.position.z = -0.1;
-    }
-
-    // ── 抓挠 ──
-    if (behavior === 'scratching') {
-      group.position.y = Math.sin(t * 6) * 0.04;
-      group.rotation.z = Math.sin(t * 5) * 0.05;
-    }
-
-    // ── 头部轻微转动（大部分行为都适用）──
-    if (head && behavior !== 'lying_down') {
-      head.rotation.y = Math.sin(t * 0.8) * 0.15;
-      head.rotation.x = Math.sin(t * 0.6) * 0.08;
-    }
-
-    // ── 耳朵动画 ──
-    if (leftEarRef.current && rightEarRef.current) {
-      const earTwitch = Math.sin(t * 3) * 0.05;
-      leftEarRef.current.rotation.x = earTwitch;
-      rightEarRef.current.rotation.x = -earTwitch;
-    }
-  });
 
   return (
     <group ref={groupRef} position={[0, 0.2, 0]}>

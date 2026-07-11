@@ -9,12 +9,20 @@ vi.mock('@react-three/fiber', () => ({
     style,
   }: {
     children?: React.ReactNode;
-    onCreated?: () => void;
+    onCreated?: (state: { gl: { getContext: () => WebGL2RenderingContext | WebGLRenderingContext } }) => void;
     style?: React.CSSProperties;
   }) => {
-    // 模拟 Canvas onCreated 回调
+    // 模拟 Canvas onCreated 回调，注入 fake WebGL renderer
     if (onCreated) {
-      setTimeout(() => onCreated(), 0);
+      const fakeCanvas = document.createElement('canvas');
+      setTimeout(() => {
+        onCreated({
+          gl: {
+            getContext: () =>
+              fakeCanvas.getContext('webgl2') as unknown as WebGL2RenderingContext,
+          },
+        });
+      }, 0);
     }
     return (
       <div data-testid="mock-canvas" style={style}>
@@ -22,6 +30,8 @@ vi.mock('@react-three/fiber', () => ({
       </div>
     );
   },
+  useFrame: () => {}, // noop — 动画 hooks 在 jsdom 中不需要实际执行
+  useThree: () => ({ camera: {}, gl: {}, scene: {} }),
 }));
 
 // Mock @react-three/drei

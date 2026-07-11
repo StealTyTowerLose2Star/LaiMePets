@@ -7,12 +7,17 @@ import { PlaceholderPet } from './PlaceholderPet';
 import { useModelFit } from './hooks/useModelFit';
 import { usePetAnimation } from './hooks/usePetAnimation';
 import { useRealismShader } from './hooks/useRealismShader';
+import {
+  usePerformanceMonitor,
+  detectPerformanceTier,
+} from './hooks/usePerformanceMonitor';
 import type { PetBehavior, PerformanceTier } from '@/types';
 
 interface PetCanvasProps {
   behavior?: PetBehavior;
   realism?: number;
-  performanceMode?: PerformanceTier;
+  /** 性能模式：'auto' 时自动检测 GPU 等级，否则强制指定 */
+  performanceMode?: PerformanceTier | 'auto';
   interactive?: boolean;
   /** 真实 3D 模型 URL（GLB 格式），未提供时使用 PlaceholderPet */
   modelPath?: string;
@@ -103,19 +108,42 @@ class GLErrorBoundary extends Component<
 export function PetCanvas({
   behavior = 'idle',
   realism = 50,
-  performanceMode = 'medium',
+  performanceMode = 'auto',
   interactive = true,
   modelPath,
   onPetClick: _onPetClick,
 }: PetCanvasProps) {
   const [isLoading, setIsLoading] = useState(true);
 
-  const handleCreated = useCallback(() => {
-    setIsLoading(false);
-  }, []);
+  // 有效性能等级：auto 模式先默认 medium，Canvas 创建后自动检测
+  const [effectiveTier, setEffectiveTier] = useState<PerformanceTier>(
+    performanceMode === 'auto' ? 'medium' : performanceMode,
+  );
 
-  const dpr = performanceMode === 'high' ? 2 : performanceMode === 'medium' ? 1.5 : 1;
-  const shadows = performanceMode !== 'low';
+  // 运行时 FPS 监控 — 持续跟踪并在性能波动时自动升降级
+  const { tier: runtimeTier } = usePerformanceMonitor(effectiveTier);
+
+  // Canvas 创建回调：GPU 检测 + 初始性能赋值
+  const handleCreated = useCallback(
+    ({ gl }: { gl: THREE.WebGLRenderer }) => {
+      setIsLoading(false);
+      if (performanceMode === 'auto') {
+        const detected = detectPerformanceTier(
+          gl.getContext() as WebGL2RenderingContext,
+        );
+        setEffectiveTier(detected);
+        console.debug(`[PetCanvas] GPU 检测: ${detected}`);
+      }
+    },
+    [performanceMode],
+  );
+
+  // 最终渲染配置：auto 模式综合 GPU 检测 + 运行时 FPS，手动模式直接用 prop
+  const renderTier: PerformanceTier =
+    performanceMode === 'auto' ? runtimeTier : (performanceMode as PerformanceTier);
+
+  const dpr = renderTier === 'high' ? 2 : renderTier === 'medium' ? 1.5 : 1;
+  const shadows = renderTier !== 'low';
 
   // 模型内容
   const placeholder = <PlaceholderPet behavior={behavior} realism={realism} />;
@@ -127,7 +155,7 @@ export function PetCanvas({
           url={modelPath}
           behavior={behavior}
           realism={realism}
-          performanceMode={performanceMode}
+          performanceMode={renderTier}
         />
       </Suspense>
     </GLErrorBoundary>
@@ -158,7 +186,7 @@ export function PetCanvas({
         shadows={shadows}
         gl={{
           alpha: true,
-          antialias: performanceMode !== 'low',
+          antialias: renderTier !== 'low',
           powerPreference: 'high-performance',
         }}
         onCreated={handleCreated}
